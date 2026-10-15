@@ -67,8 +67,8 @@ pub fn utc_stamp() -> String {
     format!("{y:04}{m:02}{d:02}T{:02}{:02}{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
-const TYPES_DE: &[(&str, &str)] = &[("exam", "Klausur"), ("test", "Test"), ("talk", "Referat"), ("deadline", "Abgabe"), ("other", "Termin")];
-const TYPES_EN: &[(&str, &str)] = &[("exam", "Exam"), ("test", "Test"), ("talk", "Presentation"), ("deadline", "Deadline"), ("other", "Event")];
+const TYPES_DE: &[(&str, &str)] = &[("exam", "Klausur"), ("test", "Test"), ("talk", "Referat"), ("deadline", "Abgabe"), ("class", "Kurs"), ("other", "Termin")];
+const TYPES_EN: &[(&str, &str)] = &[("exam", "Exam"), ("test", "Test"), ("talk", "Presentation"), ("deadline", "Deadline"), ("class", "Class"), ("other", "Event")];
 
 /// The calendar: one VEVENT per dated event (and per open homework when `tasks`).
 pub fn calendar(plan: &Value, lang: &str, tasks: bool, stamp: &str) -> String {

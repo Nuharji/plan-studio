@@ -309,6 +309,24 @@ input[type=date],input[type=time]{color-scheme:light dark}
 .tt td.c .n{font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .tt td.c .r{font-size:11px;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .tt tr.brk td{height:6px;padding:0;border:0}
+.tt th .dt{display:block;font-weight:400;font-size:11px;opacity:.8}
+.tt td.c.off{border:0;cursor:default;background:repeating-linear-gradient(135deg,transparent 0 6px,var(--hover) 6px 8px);opacity:.6}
+.tt td.c.slot{border-style:dashed;border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.tt td.c.slot .n{color:var(--accent)}
+.tt td.c .ev{display:block;margin-top:3px;font-size:11px;padding:1px 5px;border-radius:5px;background:var(--hover);color:var(--strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.tt td.c .ev:hover{outline:1px solid var(--accent)}
+.weeknav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-6px 0 12px}
+.weeknav .meta{color:var(--dim)}
+.chip.slot{background:transparent;border:1px dashed var(--accent);color:var(--accent)}
+.lesson-box{border:1px solid var(--card-border);border-radius:calc(var(--radius) + 2px);padding:8px 10px 2px;margin:10px 0;background:var(--card-bg)}
+.lesson-box.active{border-color:var(--accent)}
+.lb-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.lb-h .flex{flex:1}
+.term-checks{display:flex;flex-wrap:wrap;gap:4px 12px}
+.term-checks label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.daylen{display:grid;grid-template-columns:max-content minmax(0,260px);gap:6px 12px;align-items:center}
+.term-row{display:flex;align-items:center;gap:6px;margin:0 0 6px;flex-wrap:wrap}
+.term-row .field-in{width:180px}
 
 /* Dock editor */
 .ed-field{margin:0 0 10px}
@@ -325,7 +343,7 @@ input[type=date],input[type=time]{color-scheme:light dark}
 .colors button{width:24px;height:24px;border-radius:50%;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--border);cursor:pointer;padding:0}
 .colors button.on{box-shadow:0 0 0 2px var(--accent)}
 .periods{display:grid;grid-template-columns:auto 1fr 1fr;gap:6px 8px;align-items:center;max-width:360px}
-.periods input{height:26px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:var(--radius);padding:0 6px;font:inherit}
+.daylen select,.term-row input,.periods input{height:26px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:var(--radius);padding:0 6px;font:inherit}
 .danger-btn{color:var(--danger)}
 
 @media print{

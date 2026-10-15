@@ -55,7 +55,7 @@ const DEFAULT_SUBJECTS = {
 };
 const DEFAULT_PERIODS = [['07:45', '08:30'], ['08:35', '09:20'], ['09:40', '10:25'], ['10:30', '11:15'], ['11:35', '12:20'], ['12:25', '13:10'],
   ['13:40', '14:25'], ['14:30', '15:15'], ['15:20', '16:05'], ['16:10', '16:55']].map(([start, end]) => ({start, end}));
-const EVENT_TYPES = ['exam', 'test', 'talk', 'deadline', 'other'];
+const EVENT_TYPES = ['exam', 'test', 'talk', 'deadline', 'class', 'other'];
 function newPlan(l = lang) {
   return {version: 1, days: 5, periods: DEFAULT_PERIODS.slice(0, 8),
     subjects: DEFAULT_SUBJECTS[l === 'de' ? 'de' : 'en'].map(([name, short], i) => ({id: uid(), name, short, color: COLORS[i % COLORS.length], teacher: '', room: ''})),
@@ -64,13 +64,35 @@ function newPlan(l = lang) {
 const validPlan = p => !!p && Array.isArray(p.subjects) && Array.isArray(p.lessons) && Array.isArray(p.tasks) && Array.isArray(p.events) && Array.isArray(p.periods);
 let plan = null;
 const subj = id => plan.subjects.find(s => s.id === id);
-const lessonAt = (day, period) => plan.lessons.find(l => l.day === day && l.period === period);
+/* Terms (half-years, quarters, blocks…): a lesson can be limited to some of them — e.g. an elective that changes
+   every quarter. A lesson without terms always applies. `date` = the day it is about (none = every lesson). */
+const terms = () => plan.terms || [];
+const termsOn = date => terms().filter(x => x.from <= date && date <= x.to);
+const termOk = (l, date) => !date || !(l.terms && l.terms.length) || l.terms.some(id => termsOn(date).some(x => x.id === id));
+const lessonsAt = (day, period, date) => plan.lessons.filter(l => l.day === day && l.period === period && termOk(l, date));
+const lessonAt = (day, period, date) => lessonsAt(day, period, date)[0];
+/* Days can be shorter than the others (e.g. only mornings on Saturday). */
+const periodsOn = day => Math.min(plan.periods.length, (plan.dayPeriods || [])[day] || plan.periods.length);
+/* Elective areas: subjects in the same area form a catalog; a timetable slot of that area is chosen from it. */
+const groups = () => [...new Set(plan.subjects.map(s => (s.group || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+/* Class sessions at changing times (dated events of type "class") — shown in the timetable and in Today. */
+const classesOn = date => plan.events.filter(e => e.type === 'class' && e.date === date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+const classEnd = e => { const m = minutesOf(e.time) + (+e.minutes || 90); return `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`; };
+const overlaps = (e, p) => !!e.time && minutesOf(e.time) < minutesOf(p.end) && minutesOf(e.time) + (+e.minutes || 90) > minutesOf(p.start);
+const mondayOf = iso => addDays(iso, -weekday(iso));
+function isoWeek(iso) {
+  const d = dateOf(addDays(iso, 3 - weekday(iso))), jan4 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round((d - jan4) / 86400000 / 7 + (weekday(isoOf(jan4)) - 3) / 7);
+}
+let weekStart = null;   // the Monday of the week the timetable shows (null = this week)
+const shownMonday = () => weekStart || mondayOf(today());
 /* The next school day (after `from`) with a lesson in this subject — the natural due date for homework. */
 function nextLesson(subjectId, from = today()) {
   if (!subjectId) return addDays(from, 1);
   for (let i = 1; i <= 14; i++) {
     const d = addDays(from, i), w = weekday(d);
-    if (w < plan.days && plan.lessons.some(l => l.day === w && l.subject === subjectId)) return d;
+    if (w < plan.days && plan.lessons.some(l => l.day === w && l.period < periodsOn(w) && l.subject === subjectId && termOk(l, d))) return d;
+    if (classesOn(d).some(e => e.subject === subjectId)) return d;
   }
   return addDays(from, 1);
 }
@@ -161,6 +183,7 @@ const calRow = e => `<div class="row" title="${esc(e.cal.name)}${e.location ? ' 
 /* ================= Rendering ================= */
 const chip = s => s ? `<span class="chip" style="background:${s.color}22;color:${s.color}"><i style="background:${s.color}"></i>${esc(s.name)}</span>` : '';
 const typeBadge = ty => `<span class="badge">${esc(t('type.' + ty))}</span>`;
+const openSlot = g => `<span class="chip slot">${esc(g)}</span>`;
 function dueBadge(iso, done) {
   if (!validIso(iso)) return '';
   const n = dayDiff(today(), iso), cls = done ? '' : n < 0 ? ' red' : n <= 1 ? ' warn' : '';
@@ -179,16 +202,20 @@ function eventRow(e, withDate = true) {
 const VIEWS = {
   today() {
     const d = today(), w = weekday(d), now = currentPeriod();
-    const lessons = w < plan.days ? plan.periods.map((p, i) => [i, p, lessonAt(w, i)]).filter(([, , l]) => l) : [];
+    const lessons = w < plan.days ? plan.periods.slice(0, periodsOn(w)).flatMap((p, i) => lessonsAt(w, i, d).map(l => [i, p, l])) : [];
+    const items = [...lessons.map(([i, p, l]) => ({at: minutesOf(p.start), html: `<div class="row${i === now ? ' now' : ''}"><span class="lesson-no">${i + 1}</span><span class="lesson-time">${esc(p.start)}–${esc(p.end)}</span>
+            ${l.subject ? chip(subj(l.subject)) : l.group ? openSlot(l.group) : ''}<span class="grow meta">${esc(!l.subject && l.group ? t('tt.notChosen') : l.room || (subj(l.subject) || {}).room || '')}</span></div>`})),
+      ...classesOn(d).map(e => ({at: minutesOf(e.time), html: `<div class="row${sel && sel.kind === 'event' && sel.id === e.id ? ' sel' : ''}" data-event="${e.id}"><span class="lesson-no">•</span>
+            <span class="lesson-time">${e.time ? esc(e.time) + '–' + esc(classEnd(e)) : esc(t('cal.allDay'))}</span>${chip(subj(e.subject))}<span class="grow">${esc(e.title)}</span></div>`}))]
+      .sort((a, b) => a.at - b.at);
     const open = plan.tasks.filter(x => !x.done);
     const overdue = open.filter(x => validIso(x.due) && x.due < d), soon = open.filter(x => validIso(x.due) && x.due >= d && dayDiff(d, x.due) <= 7);
-    const nextEvents = plan.events.filter(e => validIso(e.date) && e.date >= d && dayDiff(d, e.date) <= 30).sort((a, b) => a.date.localeCompare(b.date));
+    const nextEvents = plan.events.filter(e => e.type !== 'class' && validIso(e.date) && e.date >= d && dayDiff(d, e.date) <= 30).sort((a, b) => a.date.localeCompare(b.date));
     const byDue = (a, b) => (a.due || '').localeCompare(b.due || '');
     return `<div class="view-title"><h1>${esc(fmtDate(d, {weekday: 'long', day: 'numeric', month: 'long'}))}</h1><span class="sub">${esc(t('ui.todayHint'))}</span></div>
       <div class="cards">
         <div class="pcard"><h2>${esc(t('ui.lessonsToday'))}<button class="btn-sm" data-act="viewWeek">${esc(t('a.viewWeek'))}</button></h2>
-          ${lessons.length ? lessons.map(([i, p, l]) => `<div class="row${i === now ? ' now' : ''}"><span class="lesson-no">${i + 1}</span><span class="lesson-time">${esc(p.start)}–${esc(p.end)}</span>
-            ${chip(subj(l.subject))}<span class="grow meta">${esc(l.room || (subj(l.subject) || {}).room || '')}</span></div>`).join('')
+          ${items.length ? items.map(x => x.html).join('')
             : `<div class="empty-s">${esc(w >= plan.days ? t('ui.noSchool') : plan.lessons.length ? t('ui.noLessons') : t('ui.setupTimetable'))}</div>`}</div>
         <div class="pcard"><h2>${esc(t('ui.homework'))}<button class="btn-sm" data-act="newTask">${esc(t('ui.add'))}</button></h2>
           ${overdue.length ? `<div class="group-h red">${esc(t('g.overdue'))}</div>${overdue.sort(byDue).map(taskRow).join('')}` : ''}
@@ -204,23 +231,42 @@ const VIEWS = {
       </div>`;
   },
   week() {
-    const d = today(), w = weekday(d), now = currentPeriod();
+    const d = today(), now = currentPeriod(), ws = shownMonday();
+    const dates = Array.from({length: plan.days}, (_, i) => addDays(ws, i));
+    const termNames = [...new Set(dates.flatMap(x => termsOn(x).map(y => y.name)))];
+    const range = `${fmtDate(dates[0], {day: 'numeric', month: 'short'})} – ${fmtDate(dates[dates.length - 1], {day: 'numeric', month: 'short', year: 'numeric'})}`;
     let h = `<div class="view-title"><h1>${esc(t('a.viewWeek'))}</h1><span class="sub">${esc(t('ui.weekHint'))}</span></div>
-      <table class="tt"><tr><th></th>${Array.from({length: plan.days}, (_, i) => `<th class="${i === w ? 'today' : ''}">${esc(dayName(i))}</th>`).join('')}</tr>`;
+      <div class="weeknav"><button class="btn-sm" data-week="-1" title="${esc(t('tt.prevWeek'))}">‹</button><button class="btn-sm" data-week="0"${ws === mondayOf(d) ? ' disabled' : ''}>${esc(t('tt.thisWeek'))}</button>
+        <button class="btn-sm" data-week="1" title="${esc(t('tt.nextWeek'))}">›</button><b>${esc(t('tt.week', {n: isoWeek(ws)}))}</b><span class="meta">${esc(range)}</span>
+        ${termNames.map(n => `<span class="badge">${esc(n)}</span>`).join('')}</div>
+      <table class="tt"><tr><th></th>${dates.map((x, i) => `<th class="${x === d ? 'today' : ''}">${esc(dayName(i))}<span class="dt">${esc(fmtDate(x, {day: 'numeric', month: 'numeric'}))}</span></th>`).join('')}</tr>`;
+    const placed = new Set();
     plan.periods.forEach((p, i) => {
       h += `<tr><td class="p"><b>${i + 1}.</b>${esc(p.start)}–${esc(p.end)}</td>`;
-      for (let day = 0; day < plan.days; day++) {
-        const l = lessonAt(day, i), s = l && subj(l.subject), isSel = sel && sel.kind === 'cell' && sel.day === day && sel.period === i;
+      dates.forEach((date, day) => {
+        if (i >= periodsOn(day)) { h += '<td class="c off"></td>'; return; }
+        const ls = lessonsAt(day, i, date), cls = classesOn(date).filter(e => overlaps(e, p));
+        cls.forEach(e => placed.add(e.id));
+        const s = ls.map(l => subj(l.subject)).find(Boolean) || cls.map(e => subj(e.subject)).find(Boolean);
+        const open = ls.length && ls.every(l => !l.subject && l.group);
+        const isSel = sel && sel.kind === 'cell' && sel.day === day && sel.period === i;
         const style = s ? ` style="background:${s.color}22;border-color:${s.color}88;color:var(--strong)"` : '';
-        h += `<td class="c${s ? ' full' : ''}${isSel ? ' sel' : ''}${day === w && i === now ? ' now' : ''}" data-day="${day}" data-period="${i}"${style}>
-          ${s ? `<span class="n" style="color:${s.color}">${esc(s.name)}</span><span class="r">${esc(l.room || s.room || '')}</span>` : ''}</td>`;
-      }
+        h += `<td class="c${s ? ' full' : ''}${open ? ' slot' : ''}${isSel ? ' sel' : ''}${date === d && i === now ? ' now' : ''}" data-day="${day}" data-period="${i}"${style}>
+          ${ls.map(l => { const ss = subj(l.subject);
+            return ss ? `<span class="n" style="color:${ss.color}">${esc(ss.name)}</span><span class="r">${esc(l.room || ss.room || '')}</span>`
+              : l.group ? `<span class="n">${esc(l.group)}</span><span class="r">${esc(t('tt.choose'))}</span>` : ''; }).join('')}
+          ${cls.map(e => `<span class="ev" data-event="${e.id}" title="${esc(`${e.time}–${classEnd(e)} ${e.title || (subj(e.subject) || {}).name || ''}`)}">${esc(e.time)} ${esc(e.title || (subj(e.subject) || {}).name || t('type.class'))}</span>`).join('')}</td>`;
+      });
       h += '</tr>';
       // A longer pause before the next period shows as a gap.
       const next = plan.periods[i + 1];
       if (next && minutesOf(next.start) - minutesOf(p.end) >= 15) h += `<tr class="brk"><td colspan="${plan.days + 1}"></td></tr>`;
     });
-    return h + '</table>';
+    h += '</table>';
+    // Class sessions that fit no period (no time, after the last period, on a free day) are listed below.
+    const rest = Array.from({length: 7}, (_, i) => addDays(ws, i)).flatMap(x => classesOn(x)).filter(e => !placed.has(e.id));
+    if (rest.length) h += `<div class="group-h">${esc(t('tt.moreClasses'))}</div>` + rest.map(e => eventRow(e)).join('');
+    return h;
   },
   tasks() {
     const d = today(), open = plan.tasks.filter(x => !x.done), done = plan.tasks.filter(x => x.done);
@@ -259,12 +305,20 @@ const VIEWS = {
   subjects() {
     return `<div class="view-title"><h1>${esc(t('ui.subjects'))}</h1><span class="sub">${esc(t('ui.subjectsHint'))}</span></div>
       <div class="quick"><input class="field-in title-in" id="qTitle" placeholder="${esc(t('ui.subjectPh'))}"><button class="btn-sm primary" id="qAdd">${esc(t('ui.add'))}</button></div>
-      ${plan.subjects.map(s => `<div class="row${sel && sel.kind === 'subject' && sel.id === s.id ? ' sel' : ''}" data-subject="${s.id}">
+      ${['', ...groups()].map(g => {
+        const list = plan.subjects.filter(s => (s.group || '').trim() === g);
+        return (g ? `<div class="group-h">${esc(t('ui.catalog', {name: g}))} · ${list.length}</div>` : '') + list.map(s => `<div class="row${sel && sel.kind === 'subject' && sel.id === s.id ? ' sel' : ''}" data-subject="${s.id}">
         ${chip(s)}<span class="grow meta">${esc([s.teacher, s.room].filter(Boolean).join(' · '))}</span>
-        <span class="meta">${esc(t('ui.lessonsPerWeek', {n: plan.lessons.filter(l => l.subject === s.id).length}))}</span></div>`).join('')}`;
+        <span class="meta">${esc(t('ui.lessonsPerWeek', {n: plan.lessons.filter(l => l.subject === s.id && termOk(l, today())).length}))}</span></div>`).join('');
+      }).join('')}`;
   }
 };
-const subjectOptions = cur => `<option value="">${esc(t('ui.noSubject'))}</option>` + plan.subjects.map(s => `<option value="${s.id}"${s.id === cur ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+const subjectOptions = cur => {
+  const o = list => list.map(s => `<option value="${s.id}"${s.id === cur ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
+  return `<option value="">${esc(t('ui.noSubject'))}</option>` + o(plan.subjects.filter(s => !(s.group || '').trim()))
+    + groups().map(g => `<optgroup label="${esc(g)}">${o(plan.subjects.filter(s => (s.group || '').trim() === g))}</optgroup>`).join('');
+};
+const groupList = () => `<datalist id="groupList">${groups().map(g => `<option value="${esc(g)}">`).join('')}</datalist>`;
 
 function renderView() {
   const v = $('#view');
@@ -285,11 +339,28 @@ function renderDetails() {
   const field = (label, html) => `<div class="ed-field"><label>${esc(t(label))}</label>${html}</div>`;
   if (!sel) { box.innerHTML = `<div class="empty">${esc(t('ui.selectHint'))}</div>`; return; }
   if (sel.kind === 'cell') {
-    const l = lessonAt(sel.day, sel.period), p = plan.periods[sel.period];
+    const p = plan.periods[sel.period], date = addDays(shownMonday(), sel.day);
+    const all = plan.lessons.filter(l => l.day === sel.day && l.period === sel.period), l = lessonAt(sel.day, sel.period, date);
+    const pal = list => `<div class="palette">${list.map(s => `<button data-assign="${s.id}" class="${l && l.subject === s.id ? 'on' : ''}"><i style="background:${s.color}"></i>${esc(s.name)}</button>`).join('')}</div>`;
+    const catalog = l && l.group ? plan.subjects.filter(s => (s.group || '').trim() === l.group) : [];
+    const lessonBox = x => {
+      const ss = subj(x.subject);
+      return `<div class="lesson-box${x === l ? ' active' : ''}">
+        <div class="lb-h">${ss ? chip(ss) : x.group ? openSlot(x.group) : `<span class="meta">${esc(t('tt.empty'))}</span>`}
+          ${x === l ? `<span class="badge ok">${esc(t('tt.thisWeekOn'))}</span>` : ''}<span class="flex"></span><button class="btn-sm danger-btn" data-ldel="${x.id}">${esc(t('a.delete'))}</button></div>
+        ${field('ui.subject', `<select data-l="subject" data-lid="${x.id}">${subjectOptions(x.subject)}</select>`)}
+        ${field('tt.group', `<input class="field-in" data-l="group" data-lid="${x.id}" list="groupList" value="${esc(x.group || '')}" placeholder="${esc(t('tt.groupPh'))}">`)}
+        ${terms().length ? field('tt.terms', `<div class="term-checks">${terms().map(tm => `<label><input type="checkbox" data-lterm="${x.id}|${tm.id}"${(x.terms || []).includes(tm.id) ? ' checked' : ''}> ${esc(tm.name)}</label>`).join('')}</div>
+          <div class="meta">${esc(t('tt.termsHint'))}</div>`) : ''}
+        ${field('ui.room', `<input class="field-in" data-l="room" data-lid="${x.id}" value="${esc(x.room || '')}" placeholder="${esc((ss || {}).room || '')}">`)}</div>`;
+    };
     box.innerHTML = `<div class="sect">${esc(dayName(sel.day))} · ${sel.period + 1}. ${esc(t('ui.period'))} (${esc(p.start)}–${esc(p.end)})</div>
-      <div class="palette">${plan.subjects.map(s => `<button data-assign="${s.id}" class="${l && l.subject === s.id ? 'on' : ''}"><i style="background:${s.color}"></i>${esc(s.name)}</button>`).join('')}</div>
-      ${l ? `<div class="sect">${esc(t('ui.room'))}</div><input class="field-in" data-lesson-room value="${esc(l.room || '')}" placeholder="${esc((subj(l.subject) || {}).room || '')}" style="width:100%">
-        <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('ui.clearCell'))}</button></p>` : `<p class="hint" style="color:var(--dim)">${esc(t('ui.cellHint'))}</p>`}`;
+      ${catalog.length ? `<div class="sect">${esc(t('ui.catalog', {name: l.group}))}</div>${pal(catalog)}<div class="sect">${esc(t('tt.allSubjects'))}</div>` : ''}
+      ${pal(plan.subjects.filter(s => !catalog.includes(s)))}
+      ${all.length ? '' : `<p class="hint" style="color:var(--dim)">${esc(t('ui.cellHint'))}</p>`}
+      ${all.map(lessonBox).join('')}${groupList()}
+      <p><button class="btn-sm" data-ladd>${esc(t(all.length ? 'tt.addAnother' : 'tt.addSlot'))}</button></p>
+      ${all.length > 1 || terms().length ? `<p class="hint" style="color:var(--dim)">${esc(t('tt.cellTermsHint'))}</p>` : ''}`;
     return;
   }
   if (sel.kind === 'task') {
@@ -308,8 +379,9 @@ function renderDetails() {
       ${field('ui.title', `<input class="field-in" data-f="title" value="${esc(e.title)}">`)}
       ${field('ui.subject', `<select data-f="subject">${subjectOptions(e.subject)}</select>`)}
       ${field('ui.dateTime', `<div class="two"><input type="date" data-f="date" value="${esc(e.date || '')}"><input type="time" data-f="time" value="${esc(e.time || '')}"></div>`)}
+      ${e.time ? field('ui.minutes', `<input class="field-in" type="number" min="5" max="600" step="5" data-f="minutes" value="${esc(e.minutes || 90)}">`) : ''}
       ${field('ui.notes', `<textarea data-f="notes" placeholder="${esc(t('ui.eventNotesPh'))}">${esc(e.notes || '')}</textarea>`)}
-      <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
+      <p><button class="btn-sm" data-copy-week>${esc(t('ui.copyWeek'))}</button> <button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
   } else if (sel.kind === 'subject') {
     const s = subj(sel.id); if (!s) return;
     box.innerHTML = `<div class="sect">${esc(t('ui.subject'))}</div>
@@ -318,6 +390,7 @@ function renderDetails() {
       ${field('ui.color', `<div class="colors">${COLORS.map(c => `<button data-color="${c}" class="${c === s.color ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div>`)}
       ${field('ui.teacher', `<input class="field-in" data-f="teacher" value="${esc(s.teacher || '')}">`)}
       ${field('ui.roomDefault', `<input class="field-in" data-f="room" value="${esc(s.room || '')}">`)}
+      ${field('tt.group', `<input class="field-in" data-f="group" list="groupList" value="${esc(s.group || '')}" placeholder="${esc(t('tt.groupPh'))}">${groupList()}<div class="meta">${esc(t('tt.groupHint'))}</div>`)}
       <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
   }
 }
@@ -327,7 +400,7 @@ function renderWeekAhead() {
   $('#weekAhead').innerHTML = Array.from({length: 7}, (_, i) => {
     const day = addDays(d, i), w = weekday(day);
     const tasks = plan.tasks.filter(x => !x.done && x.due === day), events = plan.events.filter(e => e.date === day), cal = calEventsOn(day);
-    const n = w < plan.days ? plan.lessons.filter(l => l.day === w).length : 0;
+    const n = (w < plan.days ? plan.lessons.filter(l => l.day === w && l.period < periodsOn(w) && termOk(l, day)).length : 0) + classesOn(day).length;
     return `<div class="sect">${esc(i === 0 ? t('d.today') : i === 1 ? t('d.tomorrow') : fmtDate(day, {weekday: 'long', day: 'numeric', month: 'short'}))}
       <span style="float:right;text-transform:none;letter-spacing:0;font-weight:400">${n ? esc(t(n === 1 ? 'ui.nLesson' : 'ui.nLessons', {n})) : ''}</span></div>
       ${events.map(e => eventRow(e, false)).join('')}${tasks.map(taskRow).join('')}${cal.map(calRow).join('')}${!events.length && !tasks.length && !cal.length ? `<div class="empty-s">—</div>` : ''}`;
@@ -336,7 +409,7 @@ function renderWeekAhead() {
 function updateStatus() {
   if (!plan) return;
   const open = plan.tasks.filter(x => !x.done).length, d = today();
-  const next = plan.events.filter(e => validIso(e.date) && e.date >= d).sort((a, b) => a.date.localeCompare(b.date))[0];
+  const next = plan.events.filter(e => e.type !== 'class' && validIso(e.date) && e.date >= d).sort((a, b) => a.date.localeCompare(b.date))[0];
   const st = $('#stState');
   st.className = 'st-state' + (dirty ? ' dirty' : '');
   st.textContent = dirty ? t('st.saving') : t('st.saved');
@@ -356,7 +429,11 @@ view.addEventListener('click', e => {
   if (done) { const x = plan.tasks.find(y => y.id === done.dataset.done); change(() => { x.done = done.checked; }); return; }
   if (e.target.id === 'showDone') { settings.showDone = e.target.checked; saveSettings(); renderView(); return; }
   if (e.target.id === 'qAdd') return quickAdd();
-  const cell = e.target.closest('td.c');
+  const wk = e.target.closest('[data-week]');
+  if (wk) { const n = +wk.dataset.week; weekStart = n ? addDays(shownMonday(), 7 * n) : null; renderView(); renderDetails(); return; }
+  const ev = e.target.closest('.ev[data-event]');
+  if (ev) { sel = {kind: 'event', id: ev.dataset.event}; showDetails(); return; }
+  const cell = e.target.closest('td.c:not(.off)');
   if (cell) { sel = {kind: 'cell', day: +cell.dataset.day, period: +cell.dataset.period}; showDetails(); return; }
   const row = e.target.closest('[data-task],[data-event],[data-subject]');
   if (row && !e.target.closest('input')) {
@@ -397,22 +474,51 @@ function quickAdd() {
 /* Editing in the details panel: text fields save when they lose focus or on Enter, the rest at once. */
 $('#details').addEventListener('change', e => {
   const f = e.target.dataset.f;
-  if (e.target.matches('[data-lesson-room]')) { const l = lessonAt(sel.day, sel.period); if (l) change(() => { l.room = e.target.value.trim(); }); return; }
+  if (e.target.dataset.l) {
+    const l = plan.lessons.find(x => x.id === e.target.dataset.lid), k = e.target.dataset.l;
+    if (l) change(() => { l[k] = e.target.value.trim(); });
+    return;
+  }
+  if (e.target.dataset.lterm) {
+    const [lid, tid] = e.target.dataset.lterm.split('|'), l = plan.lessons.find(x => x.id === lid);
+    if (l) change(() => { const set = new Set(l.terms || []); e.target.checked ? set.add(tid) : set.delete(tid); l.terms = terms().map(x => x.id).filter(id => set.has(id)); });
+    return;
+  }
   if (!f || !sel) return;
   const obj = sel.kind === 'task' ? plan.tasks.find(x => x.id === sel.id) : sel.kind === 'event' ? plan.events.find(x => x.id === sel.id) : subj(sel.id);
   if (!obj) return;
   const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-  change(() => { obj[f] = typeof v === 'string' && f !== 'notes' ? v.trim() : v; });
+  change(() => { obj[f] = f === 'minutes' ? clamp(Math.round(+v) || 90, 5, 600) : typeof v === 'string' && f !== 'notes' ? v.trim() : v; });
 });
 $('#details').addEventListener('click', e => {
   const a = e.target.closest('[data-assign]');
   if (a) {
-    const {day, period} = sel, l = lessonAt(day, period);
+    const {day, period} = sel, date = addDays(shownMonday(), day), l = lessonAt(day, period, date);
+    const others = plan.lessons.some(x => x.day === day && x.period === period);
     change(() => {
-      if (l && l.subject === a.dataset.assign) plan.lessons = plan.lessons.filter(x => x !== l);   // clicking the same subject again clears it
+      // Clicking the same subject again clears it (an elective slot stays, only the choice goes).
+      if (l && l.subject === a.dataset.assign) { if (l.group) l.subject = ''; else plan.lessons = plan.lessons.filter(x => x !== l); }
       else if (l) l.subject = a.dataset.assign;
-      else plan.lessons.push({id: uid(), day, period, subject: a.dataset.assign, room: ''});
+      // A new lesson next to lessons of other terms applies to the terms of the week shown.
+      else plan.lessons.push({id: uid(), day, period, subject: a.dataset.assign, room: '', terms: others ? termsOn(date).map(x => x.id) : []});
     });
+    return;
+  }
+  const ld = e.target.closest('[data-ldel]');
+  if (ld) { change(() => { plan.lessons = plan.lessons.filter(x => x.id !== ld.dataset.ldel); }); return; }
+  if (e.target.closest('[data-ladd]')) {
+    const {day, period} = sel, date = addDays(shownMonday(), day), cur = lessonAt(day, period, date);
+    const used = new Set(plan.lessons.filter(x => x.day === day && x.period === period).flatMap(x => x.terms || []));
+    const free = terms().find(x => !used.has(x.id) && x.to >= date) || terms().find(x => !used.has(x.id));
+    const first = !plan.lessons.some(x => x.day === day && x.period === period);
+    change(() => plan.lessons.push({id: uid(), day, period, subject: '', group: cur ? cur.group || '' : '', room: '', terms: !first && free ? [free.id] : []}));
+    return;
+  }
+  if (e.target.closest('[data-copy-week]')) {
+    const ev = plan.events.find(y => y.id === sel.id); if (!ev || !validIso(ev.date)) return;
+    const copy = {...ev, id: uid(), date: addDays(ev.date, 7)};
+    change(() => plan.events.push(copy));
+    sel = {kind: 'event', id: copy.id}; renderAll(); toast(t('toast.copiedWeek', {date: fmtDate(copy.date)}));
     return;
   }
   const c = e.target.closest('[data-color]');
@@ -421,7 +527,7 @@ $('#details').addEventListener('click', e => {
 });
 function deleteSel() {
   if (!sel) return;
-  if (sel.kind === 'cell') { const l = lessonAt(sel.day, sel.period); if (l) change(() => { plan.lessons = plan.lessons.filter(x => x !== l); }); return; }
+  if (sel.kind === 'cell') { const l = lessonAt(sel.day, sel.period, addDays(shownMonday(), sel.day)); if (l) change(() => { plan.lessons = plan.lessons.filter(x => x !== l); }); return; }
   if (sel.kind === 'subject') {
     const used = plan.lessons.some(l => l.subject === sel.id) || plan.tasks.some(x => x.subject === sel.id) || plan.events.some(x => x.subject === sel.id);
     if (used && !confirm(t('confirm.deleteSubject'))) return;
@@ -436,7 +542,10 @@ function deleteSel() {
 /* Arrow keys move through the timetable. */
 function moveCell(dx, dy) {
   if (!sel || sel.kind !== 'cell') { sel = {kind: 'cell', day: 0, period: 0}; }
-  else sel = {kind: 'cell', day: clamp(sel.day + dx, 0, plan.days - 1), period: clamp(sel.period + dy, 0, plan.periods.length - 1)};
+  else {
+    const day = clamp(sel.day + dx, 0, plan.days - 1);
+    sel = {kind: 'cell', day, period: clamp(sel.period + dy, 0, periodsOn(day) - 1)};
+  }
   renderView(); renderDetails();
 }
 
@@ -621,7 +730,12 @@ function renderSettings() {
     timetable: `<h3>${esc(t('set.days'))}</h3><select class="wide-sel" data-plan="days">${opt(5, t('set.days5'), plan.days)}${opt(6, t('set.days6'), plan.days)}</select>
       <h3>${esc(t('set.periods'))}</h3><p class="hint">${esc(t('set.periodsHint'))}</p>
       <div class="periods">${plan.periods.map((p, i) => `<b>${i + 1}.</b><input type="time" data-pstart="${i}" value="${esc(p.start)}"><input type="time" data-pend="${i}" value="${esc(p.end)}">`).join('')}</div>
-      <p><button class="btn-sm" data-period="add">${esc(t('set.addPeriod'))}</button> <button class="btn-sm" data-period="remove"${plan.periods.length <= 1 ? ' disabled' : ''}>${esc(t('set.removePeriod'))}</button></p>`,
+      <p><button class="btn-sm" data-period="add">${esc(t('set.addPeriod'))}</button> <button class="btn-sm" data-period="remove"${plan.periods.length <= 1 ? ' disabled' : ''}>${esc(t('set.removePeriod'))}</button></p>
+      <h3>${esc(t('set.dayLength'))}</h3><p class="hint">${esc(t('set.dayLengthHint'))}</p>
+      <div class="daylen">${Array.from({length: plan.days}, (_, d) => `<label>${esc(dayName(d))}</label><select data-dayp="${d}">${opt(0, t('set.allPeriods'), (plan.dayPeriods || [])[d] || 0)}${plan.periods.slice(0, -1).map((p, i) => opt(i + 1, t('set.untilPeriod', {n: i + 1, end: p.end}), (plan.dayPeriods || [])[d] || 0)).join('')}</select>`).join('')}</div>
+      <h3>${esc(t('set.terms'))}</h3><p class="hint">${esc(t('set.termsHint'))}</p>
+      ${terms().map(x => `<div class="term-row"><input class="field-in" data-term="${x.id}|name" value="${esc(x.name)}"><input type="date" data-term="${x.id}|from" value="${esc(x.from)}"><span>–</span><input type="date" data-term="${x.id}|to" value="${esc(x.to)}"><button class="btn-sm danger-btn" data-term-del="${x.id}">${esc(t('cal.remove'))}</button></div>`).join('')}
+      <p><button class="btn-sm" data-term-add>${esc(t('set.addTerm'))}</button></p>`,
     calendars: (() => {
       const list = calendars().map(c => {
         const cache = (plan.calCache || {})[c.id] || {};
@@ -653,6 +767,17 @@ function renderSettings() {
 }
 $('#modal').addEventListener('click', e => {
   if (!settingsOpen) return;
+  if (e.target.closest('[data-term-add]')) {
+    const last = terms()[terms().length - 1], from = last && validIso(last.to) ? addDays(last.to, 1) : today();
+    change(() => { plan.terms = [...terms(), {id: uid(), name: t('set.termN', {n: terms().length + 1}), from, to: addDays(from, 69)}]; });
+    renderSettings(); return;
+  }
+  const td = e.target.closest('[data-term-del]');
+  if (td) {
+    const id = td.dataset.termDel;
+    change(() => { plan.terms = terms().filter(x => x.id !== id); plan.lessons.forEach(l => { if (l.terms) l.terms = l.terms.filter(y => y !== id); }); });
+    renderSettings(); return;
+  }
   const cal = e.target.closest('[data-cal-add],[data-cal-del],[data-cal-color]');
   if (cal) return calendarClick(cal);
   const x = e.target.closest('[data-sec],[data-theme-pick],[data-pref],[data-period]'); if (!x) return;
@@ -674,7 +799,13 @@ $('#modal').addEventListener('change', e => {
   if (d.sel) { settings[d.sel] = e.target.value; applySettings(); renderSettings(); }
   if (d.sw) { settings[d.sw] = e.target.checked; applySettings(); }
   if (d.calOn) { const c = calendars().find(x => x.id === d.calOn); change(() => { c.off = !e.target.checked; }); renderSettings(); return; }
-  if (d.plan === 'days') { const n = +e.target.value; change(() => { plan.days = n; plan.lessons = plan.lessons.filter(l => l.day < n); }); }
+  if (d.dayp != null) { const day = +d.dayp, n = +e.target.value; change(() => { plan.dayPeriods = Array.from({length: 7}, (_, i) => i === day ? n : (plan.dayPeriods || [])[i] || 0); }); return; }
+  if (d.term) {
+    const [id, k] = d.term.split('|'), x = terms().find(y => y.id === id), v = e.target.value.trim();
+    if (x && (k === 'name' ? v : validIso(v))) change(() => { x[k] = v; if (x.from > x.to) x[k === 'from' ? 'to' : 'from'] = v; });
+    renderSettings(); return;
+  }
+  if (d.plan === 'days') { const n = +e.target.value; change(() => { plan.days = n; plan.lessons = plan.lessons.filter(l => l.day < n); }); renderSettings(); }
   if (d.pstart != null) { const i = +d.pstart; change(() => { plan.periods[i].start = e.target.value; }); }
   if (d.pend != null) { const i = +d.pend; change(() => { plan.periods[i].end = e.target.value; }); }
 });

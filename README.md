@@ -15,6 +15,9 @@ and controls as the other Studio apps.
 - **Exams & dates**: exam, test, presentation, deadline, other — by month with a countdown
 - **Subjects**: name, short name, color, teacher, usual room (common school subjects to start with, German or English)
 - Next-7-days panel, undo/redo, print, **calendar export (.ics)** for Outlook / Google / Apple, backup and import (.plan)
+- **Flexible timetables:** terms (half-years, quarters, blocks) with courses that apply only in some of them; elective
+  areas whose subjects form a catalog to choose a slot from; shorter days (e.g. only mornings on Saturday); class sessions at
+  changing times that show in the timetable and in Today; browse the timetable week by week
 - **Linked calendars:** paste the subscription address of a Google, Apple / iCloud or Outlook calendar (https:// or webcal://);
   its events show in Today and in the next 7 days, refresh every 30 minutes and stay available offline (read-only)
 - 4 app themes, settings dialog, customizable shortcuts, auto-hide bars, German/English

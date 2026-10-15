@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — 2026-10-15
+- Terms (Settings → Timetable → Terms): half-years, quarters or blocks with dates. A course in the timetable can apply in
+  some terms only, and one slot can hold different courses for different terms (e.g. electives chosen anew each quarter).
+- Elective areas: subjects get an area (e.g. "Electives", "Clubs"); subjects of one area form a catalog. A timetable slot
+  can be an elective slot of that area ("choose …"); the catalog is offered first when you pick its course.
+- Shorter days: each day can end after a given period (e.g. only mornings on Saturday); the rest is greyed out.
+- Class sessions at changing times: the new date type "Class" with time and duration shows in the timetable of its week
+  (in the periods it overlaps) and in Today's lessons; "Copy to next week" repeats it quickly.
+- The timetable can be browsed week by week (calendar week, dates, current term).
+
 ## 0.2.1 — 2026-10-15
 - Linked calendars: Apple / iCloud calendars load now (they are sent compressed), and repeating events like "last Sunday
   in October" or "second Sunday in May" land on the right day (BYDAY positions, BYMONTH, BYMONTHDAY).
