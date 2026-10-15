@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — 2026-10-15
+- Elective areas can be chosen anew every week (Settings → Elective areas): each date of a slot gets its own choice from
+  the catalog, or "Not taking part / excused"; "Same every week" keeps a choice for offers with regular attendance.
+- Offers get a category (e.g. Academic, Sports), can be limited to one week type and to the slots they are given in; the
+  catalog of a slot shows only what is offered there, grouped by category.
+- Per area: a deadline (e.g. 13:00 on the day) and a weekly rule ("at least 1 from Academic", optionally only in B weeks).
+  Today shows open choices and missing rules in a new "Choices" card; the timetable shows them for the week.
+- Paste a whole catalog at once: one line per offer ("name; category; room; teacher; week type"), also from a spreadsheet.
+- School year (new settings page): terms, holidays and days off (no lessons), alternating weeks (A/B or any names; holiday
+  weeks can be left out of the count; click the week badge in the timetable to correct it).
+- Lessons: cancelled on a single day, own times inside the period (e.g. 13:45–14:55), only in one week type. Periods can
+  be named (e.g. "Double period").
+
 ## 0.3.0 — 2026-10-15
 - Terms (Settings → Timetable → Terms): half-years, quarters or blocks with dates. A course in the timetable can apply in
   some terms only, and one slot can hold different courses for different terms (e.g. electives chosen anew each quarter).

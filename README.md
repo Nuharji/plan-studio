@@ -18,6 +18,11 @@ and controls as the other Studio apps.
 - **Flexible timetables:** terms (half-years, quarters, blocks) with courses that apply only in some of them; elective
   areas whose subjects form a catalog to choose a slot from; shorter days (e.g. only mornings on Saturday); class sessions at
   changing times that show in the timetable and in Today; browse the timetable week by week
+- **School year:** holidays and days off, alternating weeks (A/B, with holiday weeks left out of the count), single
+  cancelled lessons, own times for a course inside its period, a name for the periods (e.g. "double period")
+- **Elective areas:** chosen once or anew every week (each date on its own, "not taking part" too), offers with category,
+  week type and the slots they are given in, a deadline and weekly rules ("at least 1 from Academic"); Today reminds you
+  of open choices; whole catalogs can be pasted (one line per offer)
 - **Linked calendars:** paste the subscription address of a Google, Apple / iCloud or Outlook calendar (https:// or webcal://);
   its events show in Today and in the next 7 days, refresh every 30 minutes and stay available offline (read-only)
 - 4 app themes, settings dialog, customizable shortcuts, auto-hide bars, German/English

@@ -327,6 +327,22 @@ input[type=date],input[type=time]{color-scheme:light dark}
 .daylen{display:grid;grid-template-columns:max-content minmax(0,260px);gap:6px 12px;align-items:center}
 .term-row{display:flex;align-items:center;gap:6px;margin:0 0 6px;flex-wrap:wrap}
 .term-row .field-in{width:180px}
+.tt td.c.hol{border:0;cursor:pointer;background:repeating-linear-gradient(45deg,transparent 0 6px,color-mix(in srgb,var(--warn) 14%,transparent) 6px 8px)}
+.tt td.c .n.cancel{text-decoration:line-through;opacity:.6}
+button.badge.wt{border:1px solid var(--accent);color:var(--accent);background:transparent;cursor:pointer;font:inherit;font-size:11px;font-weight:600}
+button.badge.wt:hover{background:var(--hover)}
+.sub-sect{margin:8px 0 5px;font-size:11px;color:var(--dim);font-weight:600}
+.pick-btns{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.btn-sm.on{border-color:var(--accent);color:var(--accent)}
+details.more{margin:10px 0}
+details.more summary{cursor:pointer;color:var(--dim);font-size:12px;margin-bottom:6px}
+.warn-row{color:var(--warn)}
+.row.warn-row{font-weight:600}
+.rule{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rule input[type=number]{width:56px}
+.rule .field-in{width:150px}
+.daylen input,.rule input,.rule select{height:26px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:var(--radius);padding:0 6px;font:inherit}
+.cat-paste{width:100%;max-width:560px;min-height:120px;box-sizing:border-box;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:var(--radius);padding:8px;font:12px/1.5 ui-monospace,Menlo,monospace}
 
 /* Dock editor */
 .ed-field{margin:0 0 10px}
