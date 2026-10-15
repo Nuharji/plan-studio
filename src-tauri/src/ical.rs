@@ -204,27 +204,62 @@ pub fn parse(ics: &str, from: i64, to: i64) -> Calendar {
     Calendar { name, events }
 }
 
-/// Start times of a repeating event up to day `to` (RRULE: FREQ, INTERVAL, COUNT, UNTIL, BYDAY for weekly).
+/// The days of month `m` that a monthly or yearly rule picks: BYDAY with an optional position ("2SU" = second Sunday,
+/// "-1SU" = last Sunday, "MO" = every Monday), else BYMONTHDAY (negative = from the end), else the start's day.
+fn month_days(y: i64, m: i64, by_day: &[(i64, i64)], by_month_day: &[i64], d0: i64) -> Vec<i64> {
+    let (first, len) = (days_from_civil(y, m, 1), days_in_month(y, m));
+    let mut out: Vec<i64> = if !by_day.is_empty() {
+        by_day.iter().flat_map(|&(pos, wd)| {
+            let all: Vec<i64> = (0..len).map(|i| first + i).filter(|&d| weekday(d) == wd).collect();
+            match pos {
+                0 => all,
+                p if p > 0 => all.get(p as usize - 1).copied().into_iter().collect(),
+                p => all.len().checked_sub((-p) as usize).map(|i| all[i]).into_iter().collect(),
+            }
+        }).collect()
+    } else if !by_month_day.is_empty() {
+        by_month_day.iter().filter_map(|&d| {
+            let d = if d < 0 { len + d + 1 } else { d };
+            (1..=len).contains(&d).then(|| first + d - 1)
+        }).collect()
+    } else if d0 <= len {
+        vec![first + d0 - 1] // months without that day (the 31st) are skipped, as the standard says
+    } else {
+        vec![]
+    };
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Start times of a repeating event up to day `to` (RRULE: FREQ, INTERVAL, COUNT, UNTIL, BYDAY, BYMONTH, BYMONTHDAY).
 fn occurrences(start: Dt, rule: &str, to: i64) -> Vec<Dt> {
     let get = |k: &str| rule.split(';').find_map(|p| p.strip_prefix(k).and_then(|v| v.strip_prefix('=')));
     let interval = get("INTERVAL").and_then(|v| v.parse::<i64>().ok()).unwrap_or(1).max(1);
     let count = get("COUNT").and_then(|v| v.parse::<usize>().ok());
     let until = get("UNTIL").and_then(Dt::parse).map(|u| u.days);
     let last = until.map_or(to, |u| u.min(to));
-    let days_of_week: Vec<i64> = get("BYDAY").map(|v| v.split(',').filter_map(|d| {
-        // Weekly rules use plain days ("MO"); "1MO" style (monthly) is not used here.
-        ["MO", "TU", "WE", "TH", "FR", "SA", "SU"].iter().position(|x| d.ends_with(x)).map(|p| p as i64)
+    // BYDAY as (position, weekday): "MO" → (0, 0), "2SU" → (2, 6), "-1SU" → (-1, 6).
+    let by_day: Vec<(i64, i64)> = get("BYDAY").map(|v| v.split(',').filter_map(|d| {
+        let wd = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"].iter().position(|x| d.ends_with(x))? as i64;
+        let pos = d[..d.len() - 2].trim_start_matches('+');
+        Some((if pos.is_empty() { 0 } else { pos.parse().ok()? }, wd))
     }).collect()).unwrap_or_default();
+    let days_of_week: Vec<i64> = by_day.iter().map(|d| d.1).collect();
+    let list = |k: &str| -> Vec<i64> { get(k).map(|v| v.split(',').filter_map(|x| x.trim().parse().ok()).collect()).unwrap_or_default() };
+    let (by_month, by_month_day) = (list("BYMONTH"), list("BYMONTHDAY"));
     let (y0, m0, d0) = civil_from_days(start.days);
     let mut out = Vec::new();
     let mut n = 0usize;
     let mut take = |days: i64, out: &mut Vec<Dt>| -> bool {
-        if days < start.days { return true; }
+        if days < start.days || (days == start.days && !out.is_empty()) { return true; }
         if days > last || count.is_some_and(|c| n >= c) || out.len() > 5000 { return false; }
         n += 1;
         out.push(Dt { days, ..start });
         true
     };
+    // The start itself is always the first occurrence, even when the rule would not pick it.
+    take(start.days, &mut out);
     match get("FREQ").unwrap_or("") {
         "DAILY" => { let mut d = start.days; while take(d, &mut out) { d += interval; } }
         "WEEKLY" => {
@@ -242,8 +277,8 @@ fn occurrences(start: Dt, rule: &str, to: i64) -> Vec<Dt> {
                 let mi = m0 - 1 + i * interval;
                 let (y, m) = (y0 + mi.div_euclid(12), mi.rem_euclid(12) + 1);
                 if days_from_civil(y, m, 1) > last { break; }
-                // Months without that day (31st) are skipped, as the standard says.
-                if d0 <= days_in_month(y, m) && !take(days_from_civil(y, m, d0), &mut out) { break; }
+                if (by_month.is_empty() || by_month.contains(&m))
+                    && month_days(y, m, &by_day, &by_month_day, d0).into_iter().any(|d| !take(d, &mut out)) { break; }
                 i += 1;
             }
         }
@@ -251,11 +286,13 @@ fn occurrences(start: Dt, rule: &str, to: i64) -> Vec<Dt> {
             let mut y = y0;
             loop {
                 if days_from_civil(y, 1, 1) > last { break; }
-                if d0 <= days_in_month(y, m0) && !take(days_from_civil(y, m0, d0), &mut out) { break; }
+                let months = if by_month.is_empty() { vec![m0] } else { let mut v = by_month.clone(); v.sort(); v };
+                if months.into_iter().filter(|m| (1..=12).contains(m))
+                    .any(|m| month_days(y, m, &by_day, &by_month_day, d0).into_iter().any(|d| !take(d, &mut out))) { break; }
                 y += interval;
             }
         }
-        _ => out.push(start),
+        _ => {}
     }
     out
 }
@@ -337,6 +374,23 @@ END:VCALENDAR\r\n";
         let moved = c.events.iter().find(|e| e.title == "Fußball (später)").unwrap();
         assert_eq!(moved.end, "2026-10-20T19:00:00");
         assert_eq!(c.events.iter().find(|e| e.uid == "b").unwrap().location, "Sportplatz");
+    }
+
+    #[test]
+    fn positions_in_month() {
+        let days = |rule: &str, start: &str, to: &str| -> Vec<String> {
+            occurrences(Dt::parse(start).unwrap(), rule, day_of(to).unwrap()).into_iter().map(|d| d.fmt()).collect()
+        };
+        // End of summer time: last Sunday in October (Apple's holiday calendar).
+        assert_eq!(days("FREQ=YEARLY;COUNT=6;BYDAY=-1SU;BYMONTH=10", "20241027", "2027-12-31"), ["2024-10-27", "2025-10-26", "2026-10-25", "2027-10-31"]);
+        // Mother's Day: second Sunday in May.
+        assert_eq!(days("FREQ=YEARLY;BYDAY=2SU;BYMONTH=5", "20260510", "2027-12-31"), ["2026-05-10", "2027-05-09"]);
+        // First Monday of every month, the last day of every month, every Tuesday in a month.
+        assert_eq!(days("FREQ=MONTHLY;BYDAY=1MO", "20261005", "2026-12-31"), ["2026-10-05", "2026-11-02", "2026-12-07"]);
+        assert_eq!(days("FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=3", "20260131", "2026-12-31"), ["2026-01-31", "2026-02-28", "2026-03-31"]);
+        assert_eq!(days("FREQ=MONTHLY;BYDAY=TU", "20261006", "2026-10-31"), ["2026-10-06", "2026-10-13", "2026-10-20", "2026-10-27"]);
+        // Several months a year; occurrences before the start are left out.
+        assert_eq!(days("FREQ=YEARLY;BYMONTH=1,7;BYMONTHDAY=15", "20260415", "2027-12-31"), ["2026-04-15", "2026-07-15", "2027-01-15", "2027-07-15"]);
     }
 
     #[test]

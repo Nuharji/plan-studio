@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 — 2026-10-15
+- Linked calendars: Apple / iCloud calendars load now (they are sent compressed), and repeating events like "last Sunday
+  in October" or "second Sunday in May" land on the right day (BYDAY positions, BYMONTH, BYMONTHDAY).
+
 ## 0.2.0 — 2026-10-15
 - Link calendars from Google, Apple / iCloud, Outlook and others (Settings → Calendars, or Plan → Linked Calendars…): paste
   the calendar's subscription address (https:// or webcal://). Its events appear in a new "My calendars" card in Today and in
