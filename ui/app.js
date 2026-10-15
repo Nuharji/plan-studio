@@ -615,6 +615,7 @@ let appliedKeys = null;
 function applySettings() {
   if (window.AutoHide) AutoHide.set(settings.autoHide);
   if (!THEMES.includes(settings.theme)) settings.theme = 'dark';
+  if (window.Shared) Shared.push({theme: settings.theme, lang: settings.lang});
   document.documentElement.dataset.theme = settings.theme;
   if (JSON.stringify(settings.keys || {}) !== appliedKeys) { appliedKeys = JSON.stringify(settings.keys || {}); Shortcuts.apply(MENUS, settings.keys || {}); buildKeymap(); buildToolbars(); }
   const nl = effectiveLang();
@@ -681,6 +682,12 @@ window.__pl = {get plan() { return plan; }, get sel() { return sel; }, A, run, n
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(STORE)); } catch (e) {}
   if (saved && saved.settings) settings = {...DEF, ...saved.settings};
+  // Theme and language shared by all Studio apps (shared.js); the shared values win over this app's own.
+  if (window.Shared) await Shared.init({apply: sh => {
+    if (sh.theme) settings.theme = sh.theme;
+    if (sh.lang) settings.lang = sh.lang;
+    if (booted) applySettings();
+  }});
   lang = effectiveLang();
   applyLanguage();
   try {

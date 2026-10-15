@@ -1,6 +1,7 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod shared;
 mod ics;
 
 use serde::{Deserialize, Serialize};
@@ -78,7 +79,7 @@ fn plan_save(app: AppHandle, content: String) -> Result<(), String> {
 /// Saves text after a save dialog (backup .plan, calendar .ics); returns the path (None = cancelled).
 #[tauri::command]
 async fn export_file(app: AppHandle, suggested_name: String, filter_name: String, ext: String, content: String) -> Result<Option<String>, String> {
-    let Some(f) = app.dialog().file().set_file_name(&suggested_name).add_filter(&filter_name, &[ext.as_str()]).blocking_save_file() else {
+    let Some(f) = crate::shared::file_dialog(&app).set_file_name(&suggested_name).add_filter(&filter_name, &[ext.as_str()]).blocking_save_file() else {
         return Ok(None);
     };
     let target = f.into_path().map_err(|e| e.to_string())?;
@@ -89,7 +90,7 @@ async fn export_file(app: AppHandle, suggested_name: String, filter_name: String
 /// Picks a plan file to import (None = cancelled).
 #[tauri::command]
 async fn import_file(app: AppHandle) -> Result<Option<PlanFile>, String> {
-    let Some(f) = app.dialog().file().add_filter("Plan Studio", &["plan", "json"]).blocking_pick_file() else { return Ok(None) };
+    let Some(f) = crate::shared::file_dialog(&app).add_filter("Plan Studio", &["plan", "json"]).blocking_pick_file() else { return Ok(None) };
     load(&f.into_path().map_err(|e| e.to_string())?).map(Some)
 }
 
@@ -185,6 +186,8 @@ fn main() {
         })
         .manage(Mutex::new(Pending { ready: false, paths: args }))
         .invoke_handler(tauri::generate_handler![
+            shared::shared_get,
+            shared::shared_set,
             texts,
             plan_load,
             plan_save,
