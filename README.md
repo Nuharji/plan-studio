@@ -1,5 +1,7 @@
 # Plan Studio (Rust / Tauri)
 
+> **Status: Pre-Alpha** — early version (0.x): it works, but things may still change or break. Version 1.0 will be the first stable one.
+
 School planner of the Studio family — timetable, homework, exams and deadlines. Works offline, no account.
 The native shell is Rust ([Tauri 2](https://tauri.app)); the UI is plain HTML/JS in `ui/`, with the same chrome
 and controls as the other Studio apps.
