@@ -15,6 +15,8 @@ and controls as the other Studio apps.
 - **Exams & dates**: exam, test, presentation, deadline, other — by month with a countdown
 - **Subjects**: name, short name, color, teacher, usual room (common school subjects to start with, German or English)
 - Next-7-days panel, undo/redo, print, **calendar export (.ics)** for Outlook / Google / Apple, backup and import (.plan)
+- **Linked calendars:** paste the subscription address of a Google, Apple / iCloud or Outlook calendar (https:// or webcal://);
+  its events show in Today and in the next 7 days, refresh every 30 minutes and stay available offline (read-only)
 - 4 app themes, settings dialog, customizable shortcuts, auto-hide bars, German/English
 
 The plan is saved in the app's data folder (`plan.json`, the previous version as `plan.bak`); a `plan.json` next to the
@@ -23,7 +25,7 @@ program is used instead (portable, e.g. on a USB stick).
 ## Layout
 ```
 ui/                 index.html, app.js; native.js, autohide.js, shortcuts.js (the same in every Studio app)
-src-tauri/src/      main.rs — saving, import / export, dialogs, print; ics.rs — the calendar file
+src-tauri/src/      main.rs — saving, import / export, dialogs, print; ics.rs — the calendar file; ical.rs — reading linked calendars
 src-tauri/i18n/     en.json, de.json — all texts
 ```
 

@@ -111,6 +111,53 @@ function fixSel() {
   if (list && !list.some(x => x.id === sel.id)) sel = null;
 }
 
+/* ================= Linked calendars ================= */
+/* Calendars from Google, Apple, Outlook… linked by their subscription address (.ics / webcal://). Rust downloads and
+   reads them (ical.rs); their events are shown read-only in Today and the next-7-days panel. The last result is kept in
+   the plan (calCache), so they also show offline. The address is secret: it is stored on this PC only. */
+const CAL_COLORS = ['#3e63dd', '#30a46c', '#d6409f', '#f76b15', '#8e4ec6', '#12a594'];
+const calendars = () => plan.calendars || [];
+let calBusy = false;
+async function refreshCalendars(only = null) {
+  if (!invoke || calBusy || !calendars().length) return;
+  calBusy = true;
+  const from = addDays(today(), -7), to = addDays(today(), 180);
+  plan.calCache = plan.calCache || {};
+  for (const c of calendars().filter(c => !only || c.id === only)) {
+    try {
+      const r = await invoke('calendar_fetch', {url: c.url, from, to});
+      plan.calCache[c.id] = {at: Date.now(), events: r.events, error: ''};
+      if (!c.name && r.name) c.name = r.name;
+    } catch (e) {
+      plan.calCache[c.id] = {...(plan.calCache[c.id] || {events: []}), error: String(e)};
+    }
+  }
+  calBusy = false;
+  persist(); renderAll(); if (settingsOpen && prefsSection === 'calendars') renderSettings();
+}
+/* An event's local start date and time (UTC times are shown in local time). */
+function localOf(e, which = 'start') {
+  const v = e[which];
+  if (e.all_day) return {date: v, time: ''};
+  const d = e.utc ? new Date(v + 'Z') : new Date(v);
+  return {date: isoOf(d), time: `${pad(d.getHours())}:${pad(d.getMinutes())}`};
+}
+/* The linked events on one day (all-day events on every day they span). */
+function calEventsOn(day) {
+  const out = [];
+  for (const c of calendars()) {
+    if (c.off) continue;
+    const cache = plan.calCache && plan.calCache[c.id];
+    for (const e of (cache && cache.events) || []) {
+      const s = localOf(e), en = localOf(e, 'end');
+      if (s.date <= day && (en.date >= day || s.date === day)) out.push({...e, cal: c, time: s.date === day ? s.time : ''});
+    }
+  }
+  return out.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+}
+const calRow = e => `<div class="row" title="${esc(e.cal.name)}${e.location ? ' · ' + esc(e.location) : ''}"><span class="chip" style="background:${e.cal.color}22;color:${e.cal.color}"><i style="background:${e.cal.color}"></i>${esc(e.time || t('cal.allDay'))}</span>
+  <span class="grow">${esc(e.title)}</span>${e.location ? `<span class="meta">${esc(e.location)}</span>` : ''}</div>`;
+
 /* ================= Rendering ================= */
 const chip = s => s ? `<span class="chip" style="background:${s.color}22;color:${s.color}"><i style="background:${s.color}"></i>${esc(s.name)}</span>` : '';
 const typeBadge = ty => `<span class="badge">${esc(t('type.' + ty))}</span>`;
@@ -148,6 +195,12 @@ const VIEWS = {
           ${soon.length ? soon.sort(byDue).map(taskRow).join('') : overdue.length ? '' : `<div class="empty-s">${esc(t('ui.noHomework'))}</div>`}</div>
         <div class="pcard"><h2>${esc(t('ui.nextDates'))}<button class="btn-sm" data-act="newEvent">${esc(t('ui.add'))}</button></h2>
           ${nextEvents.length ? nextEvents.map(e => eventRow(e, false)).join('') : `<div class="empty-s">${esc(t('ui.noDates'))}</div>`}</div>
+        <div class="pcard"><h2>${esc(t('cal.card'))}<button class="btn-sm" data-act="calendarSettings">${esc(t(calendars().length ? 'cal.manage' : 'cal.link'))}</button></h2>
+          ${calendars().length ? (() => {
+            const days = Array.from({length: 7}, (_, i) => addDays(d, i)).map(day => [day, calEventsOn(day)]).filter(([, l]) => l.length);
+            return days.length ? days.map(([day, l]) => `<div class="group-h">${esc(day === d ? t('d.today') : day === addDays(d, 1) ? t('d.tomorrow') : fmtDate(day, {weekday: 'long', day: 'numeric', month: 'short'}))}</div>${l.map(calRow).join('')}`).join('')
+              : `<div class="empty-s">${esc(t('cal.nothing'))}</div>`;
+          })() : `<div class="empty-s">${esc(t('cal.intro'))}</div>`}</div>
       </div>`;
   },
   week() {
@@ -273,11 +326,11 @@ function renderWeekAhead() {
   const d = today();
   $('#weekAhead').innerHTML = Array.from({length: 7}, (_, i) => {
     const day = addDays(d, i), w = weekday(day);
-    const tasks = plan.tasks.filter(x => !x.done && x.due === day), events = plan.events.filter(e => e.date === day);
+    const tasks = plan.tasks.filter(x => !x.done && x.due === day), events = plan.events.filter(e => e.date === day), cal = calEventsOn(day);
     const n = w < plan.days ? plan.lessons.filter(l => l.day === w).length : 0;
     return `<div class="sect">${esc(i === 0 ? t('d.today') : i === 1 ? t('d.tomorrow') : fmtDate(day, {weekday: 'long', day: 'numeric', month: 'short'}))}
       <span style="float:right;text-transform:none;letter-spacing:0;font-weight:400">${n ? esc(t(n === 1 ? 'ui.nLesson' : 'ui.nLessons', {n})) : ''}</span></div>
-      ${events.map(e => eventRow(e, false)).join('')}${tasks.map(taskRow).join('')}${!events.length && !tasks.length ? `<div class="empty-s">—</div>` : ''}`;
+      ${events.map(e => eventRow(e, false)).join('')}${tasks.map(taskRow).join('')}${cal.map(calRow).join('')}${!events.length && !tasks.length && !cal.length ? `<div class="empty-s">—</div>` : ''}`;
   }).join('');
 }
 function updateStatus() {
@@ -397,7 +450,7 @@ async function exportText(name, filter, ext, text, mime) {
     else download(text, name, mime);
   } catch (e) { toast(t('toast.saveFail', {e})); }
 }
-const exportBackup = () => exportText(`Plan ${today()}.plan`, 'Plan Studio', 'plan', JSON.stringify(plan, null, 1), 'application/json');
+const exportBackup = () => exportText(`Plan ${today()}.plan`, 'Plan Studio', 'plan', JSON.stringify({...plan, calendars: undefined, calCache: undefined}, null, 1), 'application/json');
 async function exportIcs() {
   if (!invoke) return toast(t('toast.appOnly'));
   const ics = await invoke('plan_ics', {plan, lang, tasks: !!settings.icsTasks});
@@ -412,7 +465,7 @@ async function importPlan(file) {
   let p; try { p = JSON.parse(f.content); } catch (e) { p = null; }
   if (!validPlan(p)) return toast(t('toast.notPlan', {name: f.name}));
   if (!(await ask(t('confirm.import', {name: f.name})))) return;
-  change(() => { plan = p; });
+  change(() => { plan = {...p, calendars: plan.calendars, calCache: plan.calCache}; });
   sel = null; renderAll(); toast(t('toast.imported'));
 }
 async function ask(message) { return invoke ? invoke('confirm', {title: t('confirm.title'), message, okLabel: t('confirm.ok'), cancelLabel: t('confirm.cancel')}) : confirm(message); }
@@ -429,7 +482,8 @@ const A = {
   viewToday: () => setView('today'), viewWeek: () => setView('week'), viewTasks: () => setView('tasks'), viewEvents: () => setView('events'), viewSubjects: () => setView('subjects'),
   togglePanels: () => { settings.dock = !settings.dock; applySettings(); },
   toggleAutoHide: () => { settings.autoHide = !settings.autoHide; applySettings(); },
-  settings: () => openSettings(), timetableSettings: () => openSettings('timetable'),
+  settings: () => openSettings(), timetableSettings: () => openSettings('timetable'), calendarSettings: () => openSettings('calendars'),
+  refreshCalendars: () => { if (!invoke) return toast(t('cal.appOnly')); refreshCalendars().then(() => toast(t('cal.refreshed'))); },
   langAuto: () => setLang('auto'), langEn: () => setLang('en'), langDe: () => setLang('de'),
   themeDark: () => setTheme('dark'), themeLight: () => setTheme('light'), themeGithub: () => setTheme('github'), themeGithubDark: () => setTheme('github-dark'),
   shortcuts: () => {
@@ -450,7 +504,7 @@ const A = {
 const MENUS = [
   ['file', [['importPlan', 'Ctrl+O'], ['exportBackup', 'Ctrl+S'], '-', ['exportIcs', 'Ctrl+E'], ['print', 'Ctrl+P']]],
   ['edit', [['undo', 'Ctrl+Z', null, false, ['Ctrl+Shift+Z']], ['redo', 'Ctrl+Y'], '-', ['deleteSel', 'Delete', null, true]]],
-  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newSubject'], '-', ['timetableSettings']]],
+  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newSubject'], '-', ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
   ['view', [['viewToday', 'Alt+1', () => settings.view === 'today'], ['viewWeek', 'Alt+2', () => settings.view === 'week'], ['viewTasks', 'Alt+3', () => settings.view === 'tasks'],
     ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], '-',
     ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
@@ -568,9 +622,27 @@ function renderSettings() {
       <h3>${esc(t('set.periods'))}</h3><p class="hint">${esc(t('set.periodsHint'))}</p>
       <div class="periods">${plan.periods.map((p, i) => `<b>${i + 1}.</b><input type="time" data-pstart="${i}" value="${esc(p.start)}"><input type="time" data-pend="${i}" value="${esc(p.end)}">`).join('')}</div>
       <p><button class="btn-sm" data-period="add">${esc(t('set.addPeriod'))}</button> <button class="btn-sm" data-period="remove"${plan.periods.length <= 1 ? ' disabled' : ''}>${esc(t('set.removePeriod'))}</button></p>`,
+    calendars: (() => {
+      const list = calendars().map(c => {
+        const cache = (plan.calCache || {})[c.id] || {};
+        const state = cache.error ? `<span style="color:var(--danger)">${esc(t('cal.error', {e: cache.error}))}</span>`
+          : cache.at ? esc(t('cal.updated', {n: (cache.events || []).length, when: new Date(cache.at).toLocaleString(effectiveLang() === 'de' ? 'de-DE' : 'en-GB', {dateStyle: 'short', timeStyle: 'short'})})) : esc(t('cal.notYet'));
+        return `<div class="row" style="align-items:flex-start"><span class="colors">${CAL_COLORS.map(col => `<button data-cal-color="${c.id}|${col}" class="${col === c.color ? 'on' : ''}" style="background:${col};width:16px;height:16px"></button>`).join('')}</span>
+          <span class="grow" style="white-space:normal"><b>${esc(c.name || t('cal.unnamed'))}</b><br><span class="meta">${state}</span></span>
+          <label class="switch" style="margin:0"><input type="checkbox" data-cal-on="${c.id}"${c.off ? '' : ' checked'}><span></span></label>
+          <button class="btn-sm danger-btn" data-cal-del="${c.id}">${esc(t('cal.remove'))}</button></div>`;
+      }).join('');
+      return `<h3>${esc(t('set.calendars'))}</h3><p class="hint">${esc(t('cal.hint'))}</p>${list || `<p class="hint">${esc(t('cal.none'))}</p>`}
+        <h3>${esc(t('cal.add'))}</h3>
+        <div class="ed-field"><input class="field-in" id="calUrl" placeholder="${esc(t('cal.urlPh'))}" style="width:100%;max-width:520px"></div>
+        <div class="ed-field"><input class="field-in" id="calName" placeholder="${esc(t('cal.namePh'))}" style="width:100%;max-width:520px"></div>
+        <p><button class="btn-sm primary" data-cal-add>${esc(t('cal.add'))}</button> ${calendars().length ? `<button class="btn-sm" data-act="refreshCalendars">${esc(t('a.refreshCalendars'))}</button>` : ''}</p>
+        <h3>${esc(t('cal.howTitle'))}</h3><p class="hint"><b>Google:</b> ${esc(t('cal.howGoogle'))}</p><p class="hint"><b>Apple / iCloud:</b> ${esc(t('cal.howApple'))}</p>
+        <p class="hint"><b>Outlook:</b> ${esc(t('cal.howOutlook'))}</p><p class="hint">${esc(t('cal.secret'))}</p>`;
+    })(),
     keys: '<div id="keysBox"></div>'
   };
-  const sections = ['general', 'appearance', 'timetable', 'keys'];
+  const sections = ['general', 'appearance', 'timetable', 'calendars', 'keys'];
   $('#modalTitle').textContent = t('set.title');
   $('#modalBody').innerHTML = `<div class="prefs"><nav>${sections.map(k =>
     `<button data-sec="${k}" class="${k === prefsSection ? 'active' : ''}">${esc(t('set.' + k))}</button>`).join('')}</nav><section>${body[prefsSection]}</section></div>`;
@@ -581,6 +653,8 @@ function renderSettings() {
 }
 $('#modal').addEventListener('click', e => {
   if (!settingsOpen) return;
+  const cal = e.target.closest('[data-cal-add],[data-cal-del],[data-cal-color]');
+  if (cal) return calendarClick(cal);
   const x = e.target.closest('[data-sec],[data-theme-pick],[data-pref],[data-period]'); if (!x) return;
   if (x.dataset.sec) prefsSection = x.dataset.sec;
   else if (x.dataset.themePick) settings.theme = x.dataset.themePick;
@@ -599,10 +673,35 @@ $('#modal').addEventListener('change', e => {
   const d = e.target.dataset;
   if (d.sel) { settings[d.sel] = e.target.value; applySettings(); renderSettings(); }
   if (d.sw) { settings[d.sw] = e.target.checked; applySettings(); }
+  if (d.calOn) { const c = calendars().find(x => x.id === d.calOn); change(() => { c.off = !e.target.checked; }); renderSettings(); return; }
   if (d.plan === 'days') { const n = +e.target.value; change(() => { plan.days = n; plan.lessons = plan.lessons.filter(l => l.day < n); }); }
   if (d.pstart != null) { const i = +d.pstart; change(() => { plan.periods[i].start = e.target.value; }); }
   if (d.pend != null) { const i = +d.pend; change(() => { plan.periods[i].end = e.target.value; }); }
 });
+async function calendarClick(el) {
+  if (el.dataset.calAdd != null) {
+    const url = $('#calUrl').value.trim(), name = $('#calName').value.trim();
+    if (!/^(https?|webcals?):\/\//i.test(url)) return toast(t('cal.badUrl'));
+    if (!invoke) return toast(t('cal.appOnly'));
+    if (calendars().some(c => c.url === url)) return toast(t('cal.already'));
+    el.disabled = true; el.textContent = t('cal.adding');
+    try {
+      const r = await invoke('calendar_fetch', {url, from: addDays(today(), -7), to: addDays(today(), 180)});
+      const c = {id: uid(), name: name || r.name || '', url, color: CAL_COLORS[calendars().length % CAL_COLORS.length]};
+      change(() => { plan.calendars = [...calendars(), c]; plan.calCache = {...(plan.calCache || {}), [c.id]: {at: Date.now(), events: r.events, error: ''}}; });
+      toast(t('cal.added', {name: c.name || t('cal.unnamed'), n: r.events.length}));
+    } catch (e) {
+      toast(t('cal.error', {e}));
+      renderSettings(); $('#calUrl').value = url; $('#calName').value = name;
+      return;
+    }
+    renderSettings();
+    return;
+  }
+  if (el.dataset.calDel) { const id = el.dataset.calDel; change(() => { plan.calendars = calendars().filter(c => c.id !== id); if (plan.calCache) delete plan.calCache[id]; }); }
+  if (el.dataset.calColor) { const [id, col] = el.dataset.calColor.split('|'); const c = calendars().find(x => x.id === id); change(() => { c.color = col; }); }
+  renderSettings();
+}
 function setLang(l) { settings.lang = l; applySettings(); }
 function setTheme(th) { settings.theme = th; applySettings(); }
 function applyLanguage() {
@@ -701,6 +800,8 @@ window.__pl = {get plan() { return plan; }, get sel() { return sel; }, A, run, n
   renderAll();
   // The date changes at midnight; the current period every few minutes.
   setInterval(() => { if (!typing()) { renderView(); updateStatus(); } }, 60000);
+  refreshCalendars();
+  setInterval(() => refreshCalendars(), 30 * 60000);
   if (invoke) {
     // A .plan file opened with the app ("Open with") is offered for import.
     invoke('initial_files').then(list => list[0] && importPlan(list[0])).catch(() => {});

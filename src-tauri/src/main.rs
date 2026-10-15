@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod shared;
+mod ical;
 mod ics;
 
 use serde::{Deserialize, Serialize};
@@ -194,6 +195,7 @@ fn main() {
             export_file,
             import_file,
             plan_ics,
+            ical::calendar_fetch,
             confirm,
             open_url,
             print_page,
