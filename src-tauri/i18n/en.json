@@ -208,7 +208,7 @@
   "tt.empty": "Empty",
   "tt.thisWeekOn": "this week",
   "tt.group": "Elective area",
-  "tt.groupPh": "e.g. Electives, Clubs",
+  "tt.groupPh": "e.g. Electives, Clubs, Courses",
   "tt.groupHint": "Subjects in the same elective area form a catalog. A timetable slot of that area is chosen from it.",
   "tt.terms": "Applies in",
   "tt.termsHint": "None ticked = always.",
@@ -248,7 +248,7 @@
   "area.fixedHint": "The fixed choice applies; pick something else to change it for this date only.",
   "area.weeklyHint": "This area is chosen anew every week: pick an offer for this date.",
   "area.category": "Category",
-  "area.categoryPh": "e.g. Academic, Sports",
+  "area.categoryPh": "e.g. Languages, Sports, Arts",
   "area.offeredIn": "Offered in",
   "area.offeredHint": "None ticked = in every slot of this area.",
   "area.count": "{n} offers",
@@ -260,7 +260,7 @@
   "area.none": "No elective areas yet. Give subjects an elective area, or paste a catalog below.",
   "area.import": "Paste a catalog",
   "area.importHint": "One offer per line: name; category; room; teacher; week type — only the name is needed. Lines copied from a spreadsheet work too.",
-  "area.importPh": "Robotics; Academic; 219; Arn\nChoir; Music; 307\nLibrary; Other",
+  "area.importPh": "Drama club; Arts; Hall; Ms Miller\nFootball; Sports; Gym\nHomework help; Learning",
   "area.importBtn": "Add to catalog",
   "area.needGroup": "Enter the elective area first.",
   "area.imported": "{n} offers added to {area}.",
@@ -275,5 +275,6 @@
   "set.weekTypesHint": "For A/B weeks: name the week types, separated by commas. Lessons and offers can then apply in one of them only.",
   "set.weekNames": "Week types",
   "set.thisWeekIs": "This week is",
-  "set.skipHolidayWeeks": "Holiday weeks don't count (the rhythm continues after the holidays)"
+  "set.skipHolidayWeeks": "Holiday weeks don't count (the rhythm continues after the holidays)",
+  "tt.moreOptions": "More options"
 }

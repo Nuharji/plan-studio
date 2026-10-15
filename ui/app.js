@@ -97,7 +97,7 @@ const lessonAt = (day, period, date, strict = true) => lessonsAt(day, period, da
 /* Days can be shorter than the others (e.g. only mornings on Saturday). */
 const periodsOn = day => Math.min(plan.periods.length, (plan.dayPeriods || [])[day] || plan.periods.length);
 const periodName = () => (plan.periodName || '').trim() || t('ui.period');
-/* A lesson can have its own times inside its period (e.g. a slot from 13:45 to 14:55). */
+/* A lesson can have its own times inside its period (e.g. a shorter session). */
 const timeOf = (l, p) => ({start: l.start || p.start, end: l.end || p.end});
 /* Elective areas: subjects in the same area form a catalog; a timetable slot of that area is chosen from it — once,
    or anew every week when the area says so (then the choice is stored per date in `picks`; "-" = not taking part). */
@@ -444,13 +444,14 @@ function renderDetails() {
         <div class="lb-h">${ss ? chip(ss) : x.group ? openSlot(x.group) : `<span class="meta">${esc(t('tt.empty'))}</span>`}
           ${x_on ? `<span class="badge ok">${esc(t('tt.thisWeekOn'))}</span>` : ''}<span class="flex"></span><button class="btn-sm danger-btn" data-ldel="${x.id}">${esc(t('a.delete'))}</button></div>
         ${field(x.group && weeklyArea(x.group) ? 'tt.fixedChoice' : 'ui.subject', `<select data-l="subject" data-lid="${x.id}">${subjectOptions(x.subject)}</select>`)}
+        ${field('ui.room', `<input class="field-in" data-l="room" data-lid="${x.id}" value="${esc(x.room || '')}" placeholder="${esc((ss || {}).room || '')}">`)}
+        <details class="more"${x.group || !x.subject || (x.terms || []).length || x.weekType || x.start || x.end || (x.skip || []).includes(date) ? ' open' : ''}><summary>${esc(t('tt.moreOptions'))}</summary>
         ${field('tt.group', `<input class="field-in" data-l="group" data-lid="${x.id}" list="groupList" value="${esc(x.group || '')}" placeholder="${esc(t('tt.groupPh'))}">`)}
         ${terms().length ? field('tt.terms', `<div class="term-checks">${terms().map(tm => `<label><input type="checkbox" data-lterm="${x.id}|${tm.id}"${(x.terms || []).includes(tm.id) ? ' checked' : ''}> ${esc(tm.name)}</label>`).join('')}</div>
           <div class="meta">${esc(t('tt.termsHint'))}</div>`) : ''}
         ${cycle() ? field('tt.weekTypeOnly', `<select data-l="weekType" data-lid="${x.id}"><option value="">${esc(t('tt.everyWeek'))}</option>${cycle().names.map(n => `<option value="${esc(n)}"${x.weekType === n ? ' selected' : ''}>${esc(t('tt.weekType', {name: n}))}</option>`).join('')}</select>`) : ''}
-        ${field('ui.room', `<input class="field-in" data-l="room" data-lid="${x.id}" value="${esc(x.room || '')}" placeholder="${esc((ss || {}).room || '')}">`)}
         ${field('tt.ownTime', `<div class="two"><input type="time" data-l="start" data-lid="${x.id}" value="${esc(x.start || '')}" placeholder="${esc(p.start)}"><input type="time" data-l="end" data-lid="${x.id}" value="${esc(x.end || '')}"></div><div class="meta">${esc(t('tt.ownTimeHint', {start: p.start, end: p.end}))}</div>`)}
-        <label class="switch"><input type="checkbox" data-lskip="${x.id}"${(x.skip || []).includes(date) ? ' checked' : ''}><span></span>${esc(t('tt.skipDay', {date: fmtDate(date)}))}</label></div>`;
+        <label class="switch"><input type="checkbox" data-lskip="${x.id}"${(x.skip || []).includes(date) ? ' checked' : ''}><span></span>${esc(t('tt.skipDay', {date: fmtDate(date)}))}</label></details></div>`;
     };
     box.innerHTML = `<div class="sect">${esc(dayName(sel.day))}, ${esc(fmtDate(date, {day: 'numeric', month: 'short'}))} · ${sel.period + 1}. ${esc(periodName())} (${esc(p.start)}–${esc(p.end)})${cycle() ? ' · ' + esc(t('tt.weekType', {name: weekTypeOf(date)})) : ''}</div>
       ${hol ? `<p class="hint warn-row">${esc(t('tt.holiday', {name: hol.name}))}</p>` : ''}
