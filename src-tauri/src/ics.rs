@@ -1,5 +1,6 @@
 //! iCalendar export (RFC 5545) of a plan: exams, tests, presentations and deadlines — and optionally homework — as
-//! events that calendar apps (Outlook, Google, Apple, Thunderbird) import. Dates without a time become all-day events;
+//! events that calendar apps (Outlook, Google, Apple, Thunderbird) import, and optionally the timetable of the coming
+//! weeks (`lessonEvents`, worked out by the UI with holidays, week types and choices). Dates without a time become all-day events;
 //! times are local ("floating"), like the plan itself.
 
 use serde_json::Value;
@@ -109,6 +110,18 @@ pub fn calendar(plan: &Value, lang: &str, tasks: bool, stamp: &str) -> String {
             event(t["id"].as_str().unwrap_or("t"), t["due"].as_str().unwrap_or(""), None, 0, &summary, t["notes"].as_str().unwrap_or(""));
         }
     }
+    // Single lessons of the timetable.
+    for l in plan["lessonEvents"].as_array().into_iter().flatten() {
+        let s = |k: &str| l[k].as_str().unwrap_or("").to_string();
+        let (Some(d), Some(from), Some(to)) = (ymd(&s("date")), hm(&s("start")), hm(&s("end"))) else { continue };
+        out += "BEGIN:VEVENT\r\n";
+        out += &fold(&format!("UID:{}@plan-studio", esc(&s("id"))));
+        out += &format!("DTSTAMP:{stamp}\r\nDTSTART:{d}T{from}\r\nDTEND:{d}T{to}\r\n");
+        out += &fold(&format!("SUMMARY:{}", esc(&s("title"))));
+        if !s("room").is_empty() { out += &fold(&format!("LOCATION:{}", esc(&s("room")))); }
+        if !s("teacher").is_empty() { out += &fold(&format!("DESCRIPTION:{}", esc(&s("teacher")))); }
+        out += "END:VEVENT\r\n";
+    }
     out + "END:VCALENDAR\r\n"
 }
 
@@ -142,6 +155,18 @@ mod tests {
         assert_eq!(c.matches("BEGIN:VEVENT").count(), 3);
         assert!(c.lines().all(|l| l.len() <= 75), "lines are folded");
         assert_eq!(calendar(&plan, "en", false, "x").matches("BEGIN:VEVENT").count(), 2);
+    }
+
+    #[test]
+    fn timetable_lessons() {
+        let plan = json!({"events": [], "tasks": [], "lessonEvents": [
+            {"id": "l1-2026-11-02", "date": "2026-11-02", "start": "13:45", "end": "14:55", "title": "Robotik", "room": "219", "teacher": "Fr. Müller"},
+            {"id": "bad", "date": "2026-11-02", "start": "", "end": "14:00", "title": "x"}
+        ]});
+        let c = calendar(&plan, "de", false, "20261015T120000Z");
+        assert_eq!(c.matches("BEGIN:VEVENT").count(), 1);
+        assert!(c.contains("DTSTART:20261102T134500\r\nDTEND:20261102T145500\r\n"), "{c}");
+        assert!(c.contains("SUMMARY:Robotik\r\nLOCATION:219\r\nDESCRIPTION:Fr. Müller\r\n"), "{c}");
     }
 
     #[test]

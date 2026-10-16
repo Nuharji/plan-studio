@@ -177,7 +177,7 @@ function currentPeriod() {
 
 /* ================= Settings, history, saving ================= */
 const THEMES = ['dark', 'light', 'github', 'github-dark'];
-const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, dockTab: 'details', view: 'today', showDone: false, icsTasks: true};
+const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, dockTab: 'details', view: 'today', showDone: false, icsTasks: true, icsWeeks: 0};
 let settings = {...DEF}, sel = null, booted = false, saveT = 0, dirty = false;
 const hist = {back: [], fwd: []};
 const effectiveLang = () => settings.lang === 'auto' ? ((navigator.language || 'en').toLowerCase().startsWith('de') ? 'de' : 'en') : settings.lang;
@@ -703,9 +703,26 @@ async function exportText(name, filter, ext, text, mime) {
   } catch (e) { toast(t('toast.saveFail', {e})); }
 }
 const exportBackup = () => exportText(`Plan ${today()}.plan`, 'Plan Studio', 'plan', JSON.stringify({...plan, calendars: undefined, calCache: undefined}, null, 1), 'application/json');
+/* The timetable of the coming weeks as single lessons — with terms, week types, holidays, cancelled days and the
+   choices of elective slots (slots without a choice are left out). For the calendar export. */
+function lessonOccurrences(weeks, from = today()) {
+  const out = [];
+  for (let i = 0; i < weeks * 7; i++) {
+    const date = addDays(from, i), w = weekday(date);
+    if (w >= plan.days) continue;
+    plan.periods.slice(0, periodsOn(w)).forEach((p, period) => lessonsAt(w, period, date).forEach(l => {
+      const c = choiceOn(l, date);
+      if (c.off || !c.subject) return;
+      const tm = timeOf(l, p);
+      out.push({id: `${l.id}-${date}`, date, start: tm.start, end: tm.end, title: c.subject.name, room: l.room || c.subject.room || '', teacher: c.subject.teacher || ''});
+    }));
+  }
+  return out;
+}
 async function exportIcs() {
   if (!invoke) return toast(t('toast.appOnly'));
-  const ics = await invoke('plan_ics', {plan, lang, tasks: !!settings.icsTasks});
+  const lessonEvents = settings.icsWeeks > 0 ? lessonOccurrences(settings.icsWeeks) : [];
+  const ics = await invoke('plan_ics', {plan: {...plan, calendars: undefined, calCache: undefined, lessonEvents}, lang, tasks: !!settings.icsTasks});
   exportText(lang === 'de' ? 'Schule.ics' : 'School.ics', t('ui.calendar'), 'ics', ics, 'text/calendar');
 }
 async function importPlan(file) {
@@ -866,7 +883,8 @@ function renderSettings() {
     general: `<h3>${esc(t('set.language'))}</h3><p class="hint">${esc(t('set.languageHint'))}</p>
       <select class="wide-sel" data-sel="lang">${opt('auto', t('a.langAuto'), settings.lang)}${opt('en', 'English', settings.lang)}${opt('de', 'Deutsch', settings.lang)}</select>
       <h3>${esc(t('set.layout'))}</h3>${sw('dock', t('set.panels'))}${sw('autoHide', t('set.autoHide'))}
-      <h3>${esc(t('ui.calendar'))}</h3>${sw('icsTasks', t('set.icsTasks'))}`,
+      <h3>${esc(t('ui.calendar'))}</h3>${sw('icsTasks', t('set.icsTasks'))}
+      <p class="hint">${esc(t('set.icsWeeksHint'))}</p><select class="wide-sel" data-sel="icsWeeks">${[0, 2, 4, 8, 12, 20].map(n => opt(n, n ? t('set.icsWeeksN', {n}) : t('set.icsWeeks0'), settings.icsWeeks || 0)).join('')}</select>`,
     appearance: `<h3>${esc(t('set.theme'))}</h3><div class="theme-grid">` + THEMES.map(th =>
       `<button class="theme-card${settings.theme === th ? ' active' : ''}" data-theme-pick="${th}">${mock(th)}
        <div class="theme-name">${esc(t('theme.' + th))}<span>${settings.theme === th ? '&#10003;' : ''}</span></div></button>`).join('') + '</div>',
@@ -973,7 +991,7 @@ $('#modal').addEventListener('click', e => {
 });
 $('#modal').addEventListener('change', e => {
   const d = e.target.dataset;
-  if (d.sel) { settings[d.sel] = e.target.value; applySettings(); renderSettings(); }
+  if (d.sel) { settings[d.sel] = d.sel === 'icsWeeks' ? +e.target.value : e.target.value; applySettings(); renderSettings(); }
   if (d.sw) { settings[d.sw] = e.target.checked; applySettings(); }
   if (d.calOn) { const c = calendars().find(x => x.id === d.calOn); change(() => { c.off = !e.target.checked; }); renderSettings(); return; }
   if (d.dayp != null) { const day = +d.dayp, n = +e.target.value; change(() => { plan.dayPeriods = Array.from({length: 7}, (_, i) => i === day ? n : (plan.dayPeriods || [])[i] || 0); }); return; }

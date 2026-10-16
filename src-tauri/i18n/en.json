@@ -276,5 +276,8 @@
   "set.weekNames": "Week types",
   "set.thisWeekIs": "This week is",
   "set.skipHolidayWeeks": "Holiday weeks don't count (the rhythm continues after the holidays)",
-  "tt.moreOptions": "More options"
+  "tt.moreOptions": "More options",
+  "set.icsWeeksHint": "The calendar export can also contain your timetable (with holidays, alternating weeks and your choices):",
+  "set.icsWeeks0": "Without timetable",
+  "set.icsWeeksN": "Timetable of the next {n} weeks"
 }

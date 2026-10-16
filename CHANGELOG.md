@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 — 2026-10-16
+- The calendar export can contain the timetable of the next 2–20 weeks (Settings → General → Calendar): every lesson with
+  its time, room and teacher — holidays, alternating weeks, cancelled days and your elective choices included — so the
+  timetable also shows on your phone.
+
 ## 0.4.0 — 2026-10-15
 - Elective areas can be chosen anew every week (Settings → Elective areas): each date of a slot gets its own choice from
   the catalog, or "Not taking part / excused"; "Same every week" keeps a choice for offers with regular attendance.

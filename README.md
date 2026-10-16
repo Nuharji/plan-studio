@@ -14,7 +14,7 @@ and controls as the other Studio apps.
   this week, later; tick off when done
 - **Exams & dates**: exam, test, presentation, deadline, other — by month with a countdown
 - **Subjects**: name, short name, color, teacher, usual room (common school subjects to start with, German or English)
-- Next-7-days panel, undo/redo, print, **calendar export (.ics)** for Outlook / Google / Apple, backup and import (.plan)
+- Next-7-days panel, undo/redo, print, **calendar export (.ics)** for Outlook / Google / Apple — dates, homework and, if you like, the timetable of the next weeks, backup and import (.plan)
 - **Flexible timetables:** terms (half-years, quarters, blocks) with courses that apply only in some of them; elective
   areas whose subjects form a catalog to choose a slot from; shorter days (e.g. only mornings on Saturday); class sessions at
   changing times that show in the timetable and in Today; browse the timetable week by week

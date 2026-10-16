@@ -276,5 +276,8 @@
   "set.weekNames": "Wochentypen",
   "set.thisWeekIs": "Diese Woche ist",
   "set.skipHolidayWeeks": "Ferienwochen zählen nicht mit (der Rhythmus geht nach den Ferien weiter)",
-  "tt.moreOptions": "Weitere Optionen"
+  "tt.moreOptions": "Weitere Optionen",
+  "set.icsWeeksHint": "Der Kalender-Export kann auch deinen Stundenplan enthalten (mit Ferien, wechselnden Wochen und deinen Wahlen):",
+  "set.icsWeeks0": "Ohne Stundenplan",
+  "set.icsWeeksN": "Stundenplan der nächsten {n} Wochen"
 }
