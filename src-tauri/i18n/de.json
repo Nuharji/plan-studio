@@ -307,7 +307,7 @@
   "mycal.appOnly": "Das geht in der installierten App.",
   "area.optional": "Freiwillig (nichts wählen ist in Ordnung)",
   "tt.optional": "freiwillig",
-  "tt.wtAuto": "{name}-Woche (Muster)",
+  "tt.wtAuto": "{name}-Woche (automatisch)",
   "tt.wtOnly": "{name}-Woche — nur diese Woche",
   "set.patternPlace": "{name} ({k}. Stelle im Muster)",
   "set.overrides": "Von Hand geänderte Wochen: {list}",
@@ -369,5 +369,13 @@
   "tt.roomNone": "kein Raum",
   "tt.roomDay": "Raum nur am {date}",
   "tt.roomDayPh": "Raumänderung für diesen Tag",
-  "tt.roomChanged": "Raumänderung für diesen Tag"
+  "tt.roomChanged": "Raumänderung für diesen Tag",
+  "set.weekMode": "Wochentypen richten sich nach",
+  "set.weekMode.pattern": "einem Muster (A, B, …)",
+  "set.weekMode.holidays": "den Ferien",
+  "set.weekHolidaysHint": "Die Schulwoche direkt vor und die direkt nach den Ferien bekommen einen eigenen Wochentyp, alle anderen Wochen einen anderen — nach den Ferien oben. Einzelne Wochen änderst du weiterhin im Stundenplan.",
+  "set.hBefore": "Woche vor den Ferien",
+  "set.hAfter": "Woche nach den Ferien",
+  "set.hOther": "Alle anderen Wochen",
+  "set.needHolidays": "Trag zuerst oben die Ferien ein."
 }

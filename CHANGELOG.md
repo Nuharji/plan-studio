@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.3 — 2026-10-24
+- Week types can follow the holidays instead of a pattern (Settings → School year → Alternating weeks): the school week
+  right before and the one right after holidays get their own type (e.g. A), all other weeks another (B). Based on the
+  holidays entered there; single weeks can still be changed by hand in the timetable.
+
 ## 0.7.2 — 2026-10-23
 - Rooms per day: a lesson's room can change for a single day ("Room only on Mon, 26 Oct") — shown highlighted as a room
   change in the timetable and Today, and used in the calendar. The slot's own room is now "Room (every week)", with the

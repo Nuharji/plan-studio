@@ -76,10 +76,15 @@ const holidayWeek = monday => Array.from({length: Math.min(plan.days, 5)}, (_, i
 /* A/B weeks: `names` is the pattern the weeks follow (e.g. A, B — or A, A, B), counted from an anchor week (which is
    pattern place `start`); weeks that are all holidays can be left out of the count, so the rhythm continues after the
    holidays. Single weeks can be set by hand (`overrides`: Monday → name) without moving the weeks after them. */
-const cycle = () => plan.weekCycle && (plan.weekCycle.names || []).length > 1 && validIso(plan.weekCycle.anchor) ? plan.weekCycle : null;
+/* mode "holidays": the week before and the week after holidays get their own type (e.g. A), all other weeks another (B). */
+const byHolidays = c => !!c && c.mode === 'holidays';
+const cycle = () => { const c = plan.weekCycle;
+  if (!c) return null;
+  if (byHolidays(c)) return c.hBefore && c.hAfter && c.hOther ? c : null;
+  return (c.names || []).length > 1 && validIso(c.anchor) ? c : null; };
 let wtCache = {};
 /* The week types (each name once), e.g. pattern A, A, B → A, B. */
-const weekNames = () => cycle() ? [...new Set(cycle().names)] : [];
+const weekNames = () => { const c = cycle(); return !c ? [] : [...new Set(byHolidays(c) ? [c.hBefore, c.hAfter, c.hOther] : c.names)]; };
 /* The week type the pattern gives (without a hand-set change). */
 function patternTypeOf(date) {
   const c = cycle(); if (!c) return '';
@@ -92,9 +97,16 @@ function patternTypeOf(date) {
 }
 function weekTypeOf(date) {
   const c = cycle(); if (!c || !validIso(date)) return '';
-  const a = mondayOf(c.anchor), m = mondayOf(date);
+  const m = mondayOf(date);
   if (wtCache[m] != null) return wtCache[m];
   if (c.overrides && c.overrides[m]) return (wtCache[m] = c.overrides[m]);
+  if (byHolidays(c)) {
+    // A school week right before / right after a week of holidays (weeks with only some days off are school weeks).
+    if (!holidayWeek(m) && holidayWeek(addDays(m, 7))) return (wtCache[m] = c.hBefore);
+    if (!holidayWeek(m) && holidayWeek(addDays(m, -7))) return (wtCache[m] = c.hAfter);
+    return (wtCache[m] = c.hOther);
+  }
+  const a = mondayOf(c.anchor);
   if (Math.abs(dayDiff(a, m)) > 7 * 600) return '';
   let n = 0;
   if (m >= a) { for (let w = a; w < m; w = addDays(w, 7)) if (!(c.skipHolidays && holidayWeek(w))) n++; }
@@ -1232,6 +1244,12 @@ function renderSettings() {
         <h3>${esc(t('set.holidays'))}</h3><p class="hint">${esc(t('set.holidaysHint'))}</p>${rows('holidays', holidays())}
         <p><button class="btn-sm" data-range-add="holidays">${esc(t('set.addHoliday'))}</button></p>
         <h3>${esc(t('set.weekTypes'))}</h3><p class="hint">${esc(t('set.weekTypesHint'))}</p>
+        <div class="daylen"><label>${esc(t('set.weekMode'))}</label><select data-cycle="mode">${opt('pattern', t('set.weekMode.pattern'), byHolidays(c) ? 'holidays' : 'pattern')}${opt('holidays', t('set.weekMode.holidays'), byHolidays(c) ? 'holidays' : 'pattern')}</select></div>
+        ${byHolidays(c) ? `<p class="hint">${esc(t('set.weekHolidaysHint'))}</p>
+          <div class="daylen"><label>${esc(t('set.hBefore'))}</label><input class="field-in" data-cycle="hBefore" value="${esc(c.hBefore || '')}" placeholder="A">
+          <label>${esc(t('set.hAfter'))}</label><input class="field-in" data-cycle="hAfter" value="${esc(c.hAfter || '')}" placeholder="A">
+          <label>${esc(t('set.hOther'))}</label><input class="field-in" data-cycle="hOther" value="${esc(c.hOther || '')}" placeholder="B"></div>
+          ${holidays().length ? '' : `<p class="hint" style="color:var(--warn)">${esc(t('set.needHolidays'))}</p>`}` : `
         <div class="daylen"><label>${esc(t('set.weekNames'))}</label><input class="field-in" data-cycle="names" value="${esc((c.names || []).join(', '))}" placeholder="A, B">
         ${cycle() ? (() => { const L = c.names.length, rep2 = L !== new Set(c.names).size;
           // The place of this week in the pattern (with repeated names the place matters, e.g. the first or second A).
@@ -1239,7 +1257,7 @@ function renderSettings() {
           let n = 0; if (m0 >= a) { for (let w = a; w < m0; w = addDays(w, 7)) if (!(c.skipHolidays && holidayWeek(w))) n++; } else { for (let w = m0; w < a; w = addDays(w, 7)) if (!(c.skipHolidays && holidayWeek(w))) n--; }
           const cur = (((c.start || 0) + n) % L + L) % L;
           return `<label>${esc(t('set.thisWeekIs'))}</label><select data-cycle="now">${c.names.map((nm, k) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(rep2 ? t('set.patternPlace', {k: k + 1, name: nm}) : t('tt.weekType', {name: nm}))}</option>`).join('')}</select>`; })() : ''}</div>
-        ${cycle() ? `<label class="switch"><input type="checkbox" data-cycle="skip"${c.skipHolidays ? ' checked' : ''}><span></span>${esc(t('set.skipHolidayWeeks'))}</label>` : ''}
+        ${cycle() ? `<label class="switch"><input type="checkbox" data-cycle="skip"${c.skipHolidays ? ' checked' : ''}><span></span>${esc(t('set.skipHolidayWeeks'))}</label>` : ''}`}
         ${cycle() && Object.keys(c.overrides || {}).length ? `<p class="hint">${esc(t('set.overrides', {list: Object.entries(c.overrides).sort().map(([m, nm]) => `${fmtDate(m, {day: 'numeric', month: 'numeric'})}: ${nm}`).join(', ')}))}
           <button class="btn-sm" data-cycle-clear>${esc(t('set.clearOverrides'))}</button></p>` : ''}`;
     })(),
@@ -1384,7 +1402,11 @@ $('#modal').addEventListener('change', e => {
     const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value.trim();
     change(() => {
       const c = plan.weekCycle = plan.weekCycle || {};
-      if (d.cycle === 'names') {
+      if (d.cycle === 'mode') {
+        c.mode = v;
+        if (v === 'holidays' && !c.hOther) { const n = [...new Set(c.names || [])]; c.hBefore = c.hAfter = n[0] || 'A'; c.hOther = n[1] || 'B'; }
+      } else if (['hBefore', 'hAfter', 'hOther'].includes(d.cycle)) c[d.cycle] = v.slice(0, 12);
+      else if (d.cycle === 'names') {
         c.names = v.split(/[,;/\s]+/).map(x => x.trim()).filter(Boolean).slice(0, 12);
         if ((c.start || 0) >= c.names.length) c.start = 0;
         if (!validIso(c.anchor)) { c.anchor = mondayOf(today()); c.start = 0; }
