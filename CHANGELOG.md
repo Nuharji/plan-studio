@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.2 — 2026-10-23
+- Rooms per day: a lesson's room can change for a single day ("Room only on Mon, 26 Oct") — shown highlighted as a room
+  change in the timetable and Today, and used in the calendar. The slot's own room is now "Room (every week)", with the
+  subject's room as the default; a weekly elective choice shows the room of the chosen offer.
+- Class sessions (e.g. workshops at changing times) have a room, shown in the timetable and Today.
+
 ## 0.7.1 — 2026-10-23
 - Normal timetable slots offer only normal subjects; offers of elective areas appear only in elective slots.
 - Blocked slots: Settings → Timetable has a grid of days × periods — click a slot to block it (no lessons there), e.g.

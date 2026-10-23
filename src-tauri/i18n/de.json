@@ -364,5 +364,10 @@
   "grade.delCatAsk": "Noten dieser Kategorie zählen dann in der ersten Kategorie. Entfernen?",
   "set.blocked": "Gesperrte Stunden",
   "set.blockedHint": "Klick auf ein Feld sperrt es: dort ist kein Unterricht (z. B. Samstagnachmittag). Nochmal klicken gibt es frei.",
-  "tt.moved": "In die {n}. Stunde verschoben (passend zur eigenen Zeit)."
+  "tt.moved": "In die {n}. Stunde verschoben (passend zur eigenen Zeit).",
+  "tt.roomWeekly": "Raum (jede Woche)",
+  "tt.roomNone": "kein Raum",
+  "tt.roomDay": "Raum nur am {date}",
+  "tt.roomDayPh": "Raumänderung für diesen Tag",
+  "tt.roomChanged": "Raumänderung für diesen Tag"
 }

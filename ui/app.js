@@ -116,6 +116,15 @@ const blockedAt = (day, period) => period >= periodsOn(day) || (plan.blocked || 
 const periodName = () => (plan.periodName || '').trim() || t('ui.period');
 /* A lesson can have its own times inside its period (e.g. a shorter session). */
 const timeOf = (l, p) => ({start: l.start || p.start, end: l.end || p.end});
+/* The room of a lesson on a day: a change for that day, else the slot's room (for a weekly choice the offer's own room),
+   else the subject's room. `changed` = a change for that day. */
+function roomFor(l, date, c = choiceOn(l, date)) {
+  const day = date && (l.roomOn || {})[date];
+  if (day) return {room: day, changed: true};
+  const s = c.subject || {};
+  return {room: (c.picked ? s.room || l.room : l.room || s.room) || '', changed: false};
+}
+const roomHtml = r => r.room ? (r.changed ? `<b class="room-changed" title="${esc(t('tt.roomChanged'))}">${esc(r.room)}</b>` : esc(r.room)) : '';
 /* The period a lesson with its own times belongs to: the one it starts in (or, starting in a break, the next one);
    null when it lies outside every free period. */
 function bestPeriod(l) {
@@ -454,9 +463,9 @@ const VIEWS = {
       .filter(l => !(optionalArea(l.group) && !choiceOn(l, d).subject)).map(l => [i, p, l])) : [];
     const items = [...lessons.map(([i, p, l]) => { const c = choiceOn(l, d), tm = timeOf(l, p);
         return {at: minutesOf(tm.start), html: `<div class="row${i === now ? ' now' : ''}" data-goto="${d}|${w}|${i}"><span class="lesson-no">${i + 1}</span><span class="lesson-time">${esc(tm.start)}–${esc(tm.end)}</span>
-            ${c.subject ? chip(c.subject) : l.group ? openSlot(l.group) : ''}<span class="grow meta">${esc(c.off ? t('tt.off') : !c.subject && l.group ? t('tt.notChosen') : l.room || (c.subject || {}).room || '')}</span></div>`}; }),
+            ${c.subject ? chip(c.subject) : l.group ? openSlot(l.group) : ''}<span class="grow meta">${c.off ? esc(t('tt.off')) : !c.subject && l.group ? esc(t('tt.notChosen')) : roomHtml(roomFor(l, d, c))}</span></div>`}; }),
       ...classesOn(d).map(e => ({at: minutesOf(e.time), html: `<div class="row${sel && sel.kind === 'event' && sel.id === e.id ? ' sel' : ''}" data-event="${e.id}"><span class="lesson-no">•</span>
-            <span class="lesson-time">${e.time ? esc(e.time) + '–' + esc(classEnd(e)) : esc(t('cal.allDay'))}</span>${chip(subj(e.subject))}<span class="grow">${esc(e.title)}</span></div>`}))]
+            <span class="lesson-time">${e.time ? esc(e.time) + '–' + esc(classEnd(e)) : esc(t('cal.allDay'))}</span>${chip(subj(e.subject))}<span class="grow">${esc(e.title)}</span>${e.room ? `<span class="meta">${esc(e.room)}</span>` : ''}</div>`}))]
       .sort((a, b) => a.at - b.at);
     const open = plan.tasks.filter(x => !x.done);
     const overdue = open.filter(x => validIso(x.due) && x.due < d), soon = open.filter(x => validIso(x.due) && x.due >= d && dayDiff(d, x.due) <= 7);
@@ -520,11 +529,11 @@ const VIEWS = {
             const time = l.start || l.end ? `<span class="r">${esc(timeOf(l, p).start)}–${esc(timeOf(l, p).end)}</span>` : '';
             if (gone) return `<span class="n cancel">${esc(ss ? ss.name : l.group || '')}</span><span class="r">${esc(t('tt.cancelled'))}</span>`;
             if (c.off) return `<span class="n">${esc(l.group)}</span><span class="r">${esc(t('tt.off'))}</span>`;
-            return ss ? `<span class="n" style="color:${ss.color}">${esc(ss.name)}</span><span class="r">${esc(l.room || ss.room || '')}</span>${time}`
+            return ss ? `<span class="n" style="color:${ss.color}">${esc(ss.name)}</span><span class="r">${roomHtml(roomFor(l, date, c))}</span>${time}`
               : l.group ? `<span class="n${optionalArea(l.group) ? ' opt' : ''}">${esc(l.group)}</span><span class="r">${esc(t(optionalArea(l.group) ? 'tt.optional' : 'tt.choose'))}</span>${time}` : ''; }).join('')}
           ${hol ? '' : spillsInto(day, i, date).map(l => { const ss = choiceOn(l, date).subject;
             return `<span class="cont" data-home="${day}|${l.period}" title="${esc(`${l.start}–${l.end}`)}">↳ ${esc(ss ? ss.name : l.group || '')} <small>${esc(l.start)}–${esc(l.end)}</small></span>`; }).join('')}
-          ${cls.map(e => `<span class="ev" data-event="${e.id}" title="${esc(`${e.time}–${classEnd(e)} ${e.title || (subj(e.subject) || {}).name || ''}`)}">${esc(e.time)} ${esc(e.title || (subj(e.subject) || {}).name || t('type.class'))}</span>`).join('')}</td>`;
+          ${cls.map(e => `<span class="ev" data-event="${e.id}" title="${esc(`${e.time}–${classEnd(e)} ${e.title || (subj(e.subject) || {}).name || ''}`)}">${esc(e.time)} ${esc(e.title || (subj(e.subject) || {}).name || t('type.class'))}${e.room ? ' · ' + esc(e.room) : ''}</span>`).join('')}</td>`;
       });
       h += '</tr>';
       // A longer pause before the next period shows as a gap.
@@ -657,7 +666,8 @@ function renderDetails() {
         <div class="lb-h">${ss ? chip(ss) : x.group ? openSlot(x.group) : `<span class="meta">${esc(t('tt.empty'))}</span>`}
           ${x_on ? `<span class="badge ok">${esc(t('tt.thisWeekOn'))}</span>` : ''}<span class="flex"></span><button class="btn-sm danger-btn" data-ldel="${x.id}">${esc(t('a.delete'))}</button></div>
         ${field(x.group && weeklyArea(x.group) ? 'tt.fixedChoice' : 'ui.subject', `<select data-l="subject" data-lid="${x.id}">${subjectOptions(weeklyArea(x.group) && !x.everyWeek ? '' : x.subject, !x.group)}</select>`)}
-        ${field('ui.room', `<input class="field-in" data-l="room" data-lid="${x.id}" value="${esc(x.room || '')}" placeholder="${esc((ss || {}).room || '')}">`)}
+        ${field('tt.roomWeekly', `<input class="field-in" data-l="room" data-lid="${x.id}" value="${esc(x.room || '')}" placeholder="${esc((ss || {}).room || t('tt.roomNone'))}">`)}
+        <div class="ed-field"><label>${esc(t('tt.roomDay', {date: fmtDate(date)}))}</label><input class="field-in" data-lroomday="${x.id}" value="${esc((x.roomOn || {})[date] || '')}" placeholder="${esc(t('tt.roomDayPh'))}"></div>
         <details class="more"${x.group || !x.subject || (x.terms || []).length || x.weekType || x.start || x.end || (x.skip || []).includes(date) ? ' open' : ''}><summary>${esc(t('tt.moreOptions'))}</summary>
         ${field('tt.group', `<input class="field-in" data-l="group" data-lid="${x.id}" list="groupList" value="${esc(x.group || '')}" placeholder="${esc(t('tt.groupPh'))}">`)}
         ${terms().length ? field('tt.terms', `<div class="term-checks">${terms().map(tm => `<label><input type="checkbox" data-lterm="${x.id}|${tm.id}"${(x.terms || []).includes(tm.id) ? ' checked' : ''}> ${esc(tm.name)}</label>`).join('')}</div>
@@ -699,6 +709,7 @@ function renderDetails() {
       ${field('ui.type', `<select data-f="type">${EVENT_TYPES.map(ty => `<option value="${ty}"${ty === e.type ? ' selected' : ''}>${esc(t('type.' + ty))}</option>`).join('')}</select>`)}
       ${field('ui.title', `<input class="field-in" data-f="title" value="${esc(e.title)}">`)}
       ${field('ui.subject', `<select data-f="subject">${subjectOptions(e.subject)}</select>`)}
+      ${e.type === 'class' || e.room ? field('ui.room', `<input class="field-in" data-f="room" value="${esc(e.room || '')}">`) : ''}
       ${field('ui.dateTime', `<div class="two"><input type="date" data-f="date" value="${esc(e.date || '')}"><input type="time" data-f="time" value="${esc(e.time || '')}"></div>`)}
       ${e.time ? field('ui.minutes', `<input class="field-in" type="number" min="5" max="600" step="5" data-f="minutes" value="${esc(e.minutes || 90)}">`) : ''}
       ${field('ui.notes', `<textarea data-f="notes" placeholder="${esc(t('ui.eventNotesPh'))}">${esc(e.notes || '')}</textarea>`)}
@@ -865,6 +876,16 @@ $('#details').addEventListener('change', e => {
     });
     return;
   }
+  if (e.target.dataset.lroomday) {
+    const l = plan.lessons.find(x => x.id === e.target.dataset.lroomday), date = addDays(shownMonday(), sel.day), v = e.target.value.trim();
+    if (l) change(() => {
+      const r = {};
+      for (const [k, x] of Object.entries(l.roomOn || {})) if (k >= addDays(today(), -400)) r[k] = x;   // old changes are dropped after a year
+      if (v) r[date] = v; else delete r[date];
+      l.roomOn = r;
+    });
+    return;
+  }
   if (e.target.dataset.lskip) {
     const l = plan.lessons.find(x => x.id === e.target.dataset.lskip), date = addDays(shownMonday(), sel.day);
     if (l) change(() => { const set = new Set(l.skip || []); e.target.checked ? set.add(date) : set.delete(date); l.skip = [...set].filter(x => x >= addDays(today(), -400)).sort(); });
@@ -1003,7 +1024,7 @@ function lessonOccurrences(weeks, from = today()) {
       const c = choiceOn(l, date);
       if (c.off || !c.subject) return;
       const tm = timeOf(l, p);
-      out.push({id: `${l.id}-${date}`, date, start: tm.start, end: tm.end, title: c.subject.name, room: l.room || c.subject.room || '', teacher: c.subject.teacher || ''});
+      out.push({id: `${l.id}-${date}`, date, start: tm.start, end: tm.end, title: c.subject.name, room: roomFor(l, date, c).room, teacher: c.subject.teacher || ''});
     }));
   }
   return out;

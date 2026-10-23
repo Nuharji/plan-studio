@@ -364,5 +364,10 @@
   "grade.delCatAsk": "Grades of this category then count in the first category. Remove it?",
   "set.blocked": "Blocked slots",
   "set.blockedHint": "Click a slot to block it: no lessons there (e.g. Saturday afternoon). Click again to free it.",
-  "tt.moved": "Moved to period {n} (its own time)."
+  "tt.moved": "Moved to period {n} (its own time).",
+  "tt.roomWeekly": "Room (every week)",
+  "tt.roomNone": "no room",
+  "tt.roomDay": "Room only on {date}",
+  "tt.roomDayPh": "Room change for this day",
+  "tt.roomChanged": "Room change for this day"
 }
