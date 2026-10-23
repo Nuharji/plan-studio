@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.6 — 2026-10-24
+- Grades can be switched off per subject ("No grades in this subject" in the subject's details), e.g. for clubs or
+  electives: the subject leaves the grade view, the overall average and the calculator; grades entered before are kept.
+
 ## 0.7.5 — 2026-10-24
 - A course with its own times stretches over every period it reaches into (e.g. until 16:15 over two periods) as one
   block, when those periods are free that day; otherwise they show "↳ name".

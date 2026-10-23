@@ -392,6 +392,10 @@ const gradeCfg = () => {
     subjectWeights: c.subjectWeights || {}};
 };
 const grades = () => plan.grades || [];
+/* Subjects with grades (a subject can have grades switched off, e.g. clubs or electives). */
+const gradable = s => !!s && !s.noGrades;
+const gradeSubjectOptions = cur => `<option value="">${esc(t('ui.noSubject'))}</option>` + plan.subjects.filter(s => gradable(s) || s.id === cur)
+  .map(s => `<option value="${s.id}"${s.id === cur ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
 /* "2-" → 2.3, "1+" → 0.7, "2,5" / "2.5" → 2.5, "2-3" → 2.5; points and percent as numbers. null = not a grade. */
 function gradeValue(str, cfg = gradeCfg()) {
   const s = String(str ?? '').trim().replace(',', '.').replace(/\s+/g, '').replace(/%$/, '').replace(/[–−]/g, '-');
@@ -633,7 +637,7 @@ const VIEWS = {
     return h;
   },
   grades() {
-    const cfg = gradeCfg(), tm = terms(), list = plan.subjects.filter(s => gradesIn(s.id).length);
+    const cfg = gradeCfg(), tm = terms(), list = plan.subjects.filter(s => gradable(s) && gradesIn(s.id).length);
     const avgs = list.map(s => subjectAverage(s.id).avg).filter(v => v != null);
     const overall = avgs.length ? avgs.reduce((a, b) => a + b, 0) / avgs.length : null;
     const count = list.reduce((n, s) => n + gradesIn(s.id).length, 0);
@@ -652,8 +656,8 @@ const VIEWS = {
       res = need == null ? '' : (cfg.scale === 'g16' ? need < sc.min - 0.3 : need > sc.max) ? t('grade.calcNo')
         : (cfg.scale === 'g16' ? need >= sc.max : need <= sc.min) ? t('grade.calcSafe') : t('grade.calcNeed', {g: fmtGrade(need)});
     }
-    return `<div class="view-title"><h1>${esc(t('view.grades'))}</h1><span class="sub">${esc(count ? t('grade.overall', {avg: fmtGrade(overall), n: count}) : t('grade.hint'))}</span></div>
-      <div class="quick"><select id="qSubject">${subjectOptions('')}</select>
+    return `<div class="view-title"><h1>${esc(t('view.grades'))}</h1><span class="sub">${esc(count ? t(count === 1 ? 'grade.overall1' : 'grade.overall', {avg: fmtGrade(overall), n: count}) : t('grade.hint'))}</span></div>
+      <div class="quick"><select id="qSubject">${gradeSubjectOptions('')}</select>
         <input class="field-in" id="qGrade" style="width:90px" placeholder="${esc(t('grade.valuePh.' + (cfg.scale === 'g16' && !cfg.plus ? 'g16plain' : cfg.scale)))}">
         <select id="qCat">${opts(cfg.cats.map(c => [c.id, c.name]), settings.gradeLastCat || '')}</select>
         <input class="field-in title-in" id="qTitle" placeholder="${esc(t('grade.titlePh'))}"><input type="date" id="qDate">
@@ -661,7 +665,7 @@ const VIEWS = {
       ${tm.length ? `<div class="weeknav"><span class="meta">${esc(t('grade.term'))}</span><select class="wt-sel" data-gterm>${opts([['', t('grade.allTerms')], ...tm.map(x => [x.id, x.name])], settings.gradeTerm || '')}</select></div>` : ''}
       <div class="cards">${list.map(card).join('') || `<div class="empty-s">${esc(t('grade.none'))}</div>`}
         <div class="pcard"><h2>${esc(t('grade.calc'))}</h2>
-          <div class="calc"><select data-gcalc="subject">${opts([['', t('ui.noSubject')], ...plan.subjects.map(s => [s.id, s.name])], calc.subject || '')}</select>
+          <div class="calc"><select data-gcalc="subject">${opts([['', t('ui.noSubject')], ...plan.subjects.filter(gradable).map(s => [s.id, s.name])], calc.subject || '')}</select>
             <select data-gcalc="cat">${opts(cfg.cats.map(c => [c.id, c.name]), calc.cat || '')}</select>
             <input class="field-in" data-gcalc="target" style="width:80px" value="${esc(calc.target || '')}" placeholder="${esc(t('grade.targetPh'))}"></div>
           <div class="calc-res">${esc(res || t('grade.calcHint'))}</div></div></div>`;
@@ -770,7 +774,7 @@ function renderDetails() {
     const g = grades().find(y => y.id === sel.id); if (!g) return;
     const cfg = gradeCfg(), v = gradeValue(g.value);
     box.innerHTML = `<div class="sect">${esc(t('grade.one'))}</div>
-      ${field('ui.subject', `<select data-f="subject">${subjectOptions(g.subject)}</select>`)}
+      ${field('ui.subject', `<select data-f="subject">${gradeSubjectOptions(g.subject)}</select>`)}
       ${field('grade.value', `<input class="field-in" data-f="value" value="${esc(g.value || '')}" placeholder="${esc(t('grade.valuePh.' + (cfg.scale === 'g16' && !cfg.plus ? 'g16plain' : cfg.scale)))}"><div class="meta">${esc(g.value && v == null ? t('grade.bad') : v != null ? t('grade.counts', {v: fmtGrade(v)}) : t('grade.empty'))}</div>`)}
       ${field('grade.cat', `<select data-f="cat">${cfg.cats.map(c => `<option value="${esc(c.id)}"${catOf(g).id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select>`)}
       ${field('grade.weight', `<select data-f="weight">${[0.5, 1, 2, 3].map(w => `<option value="${w}"${(+g.weight || 1) === w ? ' selected' : ''}>${esc(t('grade.times', {w: lang === 'de' ? String(w).replace('.', ',') : w}))}</option>`).join('')}</select>`)}
@@ -788,7 +792,8 @@ function renderDetails() {
       ${field('ui.roomDefault', `<input class="field-in" data-f="room" value="${esc(s.room || '')}">`)}
       ${field('tt.dayRooms', `<div class="day-rooms">${Array.from({length: plan.days}, (_, d) => `<label>${esc(dayName(d, 'short'))}<input class="field-in" data-sdayroom="${d}" value="${esc((s.dayRooms || {})[d] || '')}" placeholder="${esc(s.room || '')}"></label>`).join('')}</div><div class="meta">${esc(t('tt.dayRoomsHint'))}</div>`)}
       ${field('tt.group', `<input class="field-in" data-f="group" list="groupList" value="${esc(s.group || '')}" placeholder="${esc(t('tt.groupPh'))}">${groupList()}<div class="meta">${esc(t('tt.groupHint'))}</div>`)}
-      ${field('grade.subjectWeights', `<div class="term-checks">${gradeCfg().cats.map(c => `<label>${esc(c.name)} <input class="field-in" style="width:56px" data-sweight="${esc(c.id)}" value="${esc((gradeCfg().subjectWeights[s.id] || {})[c.id] ?? '')}" placeholder="${esc(c.weight)}"> %</label>`).join('')}</div><div class="meta">${esc(t('grade.subjectWeightsHint'))}</div>`)}
+      <label class="switch"><input type="checkbox" data-nogrades${s.noGrades ? ' checked' : ''}><span></span>${esc(t('grade.noGrades'))}</label>
+      ${s.noGrades ? '' : field('grade.subjectWeights', `<div class="term-checks">${gradeCfg().cats.map(c => `<label>${esc(c.name)} <input class="field-in" style="width:56px" data-sweight="${esc(c.id)}" value="${esc((gradeCfg().subjectWeights[s.id] || {})[c.id] ?? '')}" placeholder="${esc(c.weight)}"> %</label>`).join('')}</div><div class="meta">${esc(t('grade.subjectWeightsHint'))}</div>`)}
       ${s.group ? (() => {
         const slots = [...new Set(plan.lessons.filter(l => l.group === s.group).map(l => `${l.day}|${l.period}`))].sort();
         return field('area.category', `<input class="field-in" data-f="category" list="catList" value="${esc(s.category || '')}" placeholder="${esc(t('area.categoryPh'))}"><datalist id="catList">${categoriesOf(s.group).map(k => `<option value="${esc(k)}">`).join('')}</datalist>`)
@@ -918,6 +923,11 @@ $('#details').addEventListener('change', e => {
     const l = lessonAt(sel.day, sel.period, addDays(shownMonday(), sel.day), false); if (!l || !l.group) return;
     const on = e.target.checked;
     change(() => { plan.areas = {...(plan.areas || {}), [l.group]: {...areaOf(l.group), optional: on}}; });
+    return;
+  }
+  if (e.target.matches('[data-nogrades]') && sel && sel.kind === 'subject') {
+    const s = subj(sel.id), on = e.target.checked;
+    if (s) change(() => { s.noGrades = on; });
     return;
   }
   if (e.target.dataset.sdayroom != null && sel && sel.kind === 'subject') {

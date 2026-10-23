@@ -381,5 +381,7 @@
   "grade.plusOff": "No tendencies (only whole grades)",
   "grade.valuePh.g16plain": "e.g. 2",
   "tt.dayRooms": "Room per weekday",
-  "tt.dayRoomsHint": "E.g. Monday 209, Friday 106. Empty = the room above. For offers of an elective area it applies in every slot of that day."
+  "tt.dayRoomsHint": "E.g. Monday 209, Friday 106. Empty = the room above. For offers of an elective area it applies in every slot of that day.",
+  "grade.noGrades": "No grades in this subject",
+  "grade.overall1": "Average {avg} · 1 grade"
 }

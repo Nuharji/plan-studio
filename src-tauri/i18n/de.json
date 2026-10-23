@@ -381,5 +381,7 @@
   "grade.plusOff": "Keine Tendenzen (nur ganze Noten)",
   "grade.valuePh.g16plain": "z. B. 2",
   "tt.dayRooms": "Raum je Wochentag",
-  "tt.dayRoomsHint": "Z. B. Montag 209, Freitag 106. Leer = der Raum oben. Bei Angeboten eines Wahlbereichs gilt er in jedem Platz dieses Tages."
+  "tt.dayRoomsHint": "Z. B. Montag 209, Freitag 106. Leer = der Raum oben. Bei Angeboten eines Wahlbereichs gilt er in jedem Platz dieses Tages.",
+  "grade.noGrades": "Keine Noten in diesem Fach",
+  "grade.overall1": "Schnitt {avg} · 1 Note"
 }
