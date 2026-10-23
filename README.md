@@ -23,6 +23,9 @@ and controls as the other Studio apps.
 - **Elective areas:** chosen once or anew every week (each date on its own, "not taking part" too), offers with category,
   week type and the slots they are given in, a deadline and weekly rules ("at least 1 from Languages"); Today reminds you
   of open choices; whole catalogs can be pasted (one line per offer)
+- **Grades:** grades per subject in your school's system (1–6 with tendencies, 0–15 points or percent), categories with
+  weights (also per subject), grades that count more or less, weighted averages per subject and overall, filter by term,
+  "Which grade do I need?" and "Enter grade" right from an exam
 - **In your own calendar:** the plan's dates (and, if you like, homework and the timetable of the next weeks) in a
   calendar "Plan Studio" in your iCloud account (CalDAV, also on iPhone / iPad; Apple ID + app-specific password, kept on
   this computer only), and / or as a subscription for calendar apps on this computer (webcal://127.0.0.1…, no account) —

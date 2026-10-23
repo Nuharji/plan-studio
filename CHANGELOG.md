@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0 — 2026-10-23
+- New: grade tracker (view "Grades", Alt+6, Plan → New Grade Ctrl+G). Grades per subject in your school's system —
+  1–6 with tendencies (2+ / 2−; how much they count is set in Settings → Grades), 0–15 points or percent. Categories with
+  weights (e.g. written 50 %, oral 50 %), different per subject if needed; single grades can count ½×, 2× or 3×; an empty
+  grade (exam not back yet) is kept but not counted. Weighted average per subject and overall, filter by term, and
+  "Which grade do I need?" for the average you want. Exams, tests and presentations have "Enter grade".
+
 ## 0.6.0 — 2026-10-23
 - Voluntary elective areas: an area can be "voluntary (choosing nothing is fine)" — in the slot panel or under Settings →
   Elective areas. Unchosen slots then stay quiet ("voluntary" instead of "choose …"), get no reminder in Today and are

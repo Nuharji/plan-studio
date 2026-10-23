@@ -289,7 +289,7 @@ function undo() { if (!hist.back.length) return; wtCache = {}; hist.fwd.push(JSO
 function redo() { if (!hist.fwd.length) return; hist.back.push(JSON.stringify(plan)); plan = JSON.parse(hist.fwd.pop()); fixSel(); persist(); renderAll(); }
 function fixSel() {
   if (!sel) return;
-  const list = {task: plan.tasks, event: plan.events, subject: plan.subjects}[sel.kind];
+  const list = {task: plan.tasks, event: plan.events, subject: plan.subjects, grade: grades()}[sel.kind];
   if (list && !list.some(x => x.id === sel.id)) sel = null;
 }
 
@@ -339,6 +339,80 @@ function calEventsOn(day) {
 }
 const calRow = e => `<div class="row" title="${esc(e.cal.name)}${e.location ? ' · ' + esc(e.location) : ''}"><span class="chip" style="background:${e.cal.color}22;color:${e.cal.color}"><i style="background:${e.cal.color}"></i>${esc(e.time || t('cal.allDay'))}</span>
   <span class="grow">${esc(e.title)}</span>${e.location ? `<span class="meta">${esc(e.location)}</span>` : ''}</div>`;
+
+/* ================= Grades ================= */
+/* Grades per subject, in the school's system: 1–6 with tendencies (2+ / 2−, worth ±0.3 or what the school uses),
+   0–15 points or percent. Grades belong to categories (e.g. written 50 %, oral 50 %; per subject the weights can differ),
+   each grade can count more or less; averages are worked out per category, then weighted. An empty grade (e.g. an exam
+   not back yet) is kept but not counted. */
+const SCALES = {g16: {min: 1, max: 6, best: 1}, p15: {min: 0, max: 15, best: 15}, pct: {min: 0, max: 100, best: 100}};
+const gradeCfg = () => {
+  const c = plan.gradeCfg || {};
+  return {scale: SCALES[c.scale] ? c.scale : 'g16', plus: c.plus || 0.3,
+    cats: c.cats && c.cats.length ? c.cats : [{id: 'w', name: t('grade.written'), weight: 50}, {id: 'o', name: t('grade.oral'), weight: 50}],
+    subjectWeights: c.subjectWeights || {}};
+};
+const grades = () => plan.grades || [];
+/* "2-" → 2.3, "1+" → 0.7, "2,5" / "2.5" → 2.5, "2-3" → 2.5; points and percent as numbers. null = not a grade. */
+function gradeValue(str, cfg = gradeCfg()) {
+  const s = String(str ?? '').trim().replace(',', '.').replace(/\s+/g, '').replace(/%$/, '').replace(/[–−]/g, '-');
+  if (!s) return null;
+  const sc = SCALES[cfg.scale];
+  if (cfg.scale === 'g16') {
+    let m = s.match(/^([1-6])-([1-6])$/);
+    if (m && +m[2] === +m[1] + 1) return +m[1] + 0.5;
+    m = s.match(/^([1-6])(\+{1,2}|-{1,2})?$/);
+    if (m) {
+      const k = m[2] ? (m[2][0] === '+' ? -1 : 1) * m[2].length : 0;
+      return clamp(+m[1] + k * cfg.plus, 0.7, 6);
+    }
+  }
+  if (!/^\d+(\.\d+)?$/.test(s)) return null;
+  const v = +s;
+  return v >= sc.min - (cfg.scale === 'g16' ? 0.3 : 0) && v <= sc.max ? v : null;
+}
+function fmtGrade(v, cfg = gradeCfg()) {
+  if (v == null || !Number.isFinite(v)) return '–';
+  const n = cfg.scale === 'g16' ? v.toFixed(2) : cfg.scale === 'p15' ? v.toFixed(1) : v.toFixed(0);
+  return (lang === 'de' ? n.replace('.', ',') : n) + (cfg.scale === 'pct' ? ' %' : '');
+}
+/* 0 = best … 1 = worst, for the colour. */
+function gradeTone(v, cfg = gradeCfg()) {
+  if (v == null) return '';
+  const f = cfg.scale === 'g16' ? (v - 1) / 5 : cfg.scale === 'p15' ? (15 - v) / 15 : (100 - v) / 100;
+  return f <= 0.2 ? 'ok' : f <= 0.5 ? '' : f <= 0.62 ? 'warn' : 'red';
+}
+const catWeight = (sid, cat, cfg = gradeCfg()) => { const o = (cfg.subjectWeights[sid] || {})[cat.id]; return o != null && o !== '' ? +o : +cat.weight || 0; };
+const catOf = (g, cfg = gradeCfg()) => cfg.cats.find(c => c.id === g.cat) || cfg.cats[0];
+/* The grades counted now (the term filter of the grades view). */
+function gradesIn(sid, termId = settings.gradeTerm || '') {
+  const tm = terms().find(x => x.id === termId);
+  return grades().filter(g => g.subject === sid && (!tm || (validIso(g.date) && tm.from <= g.date && g.date <= tm.to)));
+}
+/* Average of a subject: per category (each grade by its own weight), then the categories by their weights. */
+function subjectAverage(sid, list = gradesIn(sid), cfg = gradeCfg()) {
+  let sum = 0, wsum = 0, n = 0;
+  const per = cfg.cats.map(cat => {
+    let s2 = 0, w2 = 0;
+    for (const g of list.filter(g => catOf(g, cfg).id === cat.id)) {
+      const v = gradeValue(g.value, cfg); if (v == null) continue;
+      const w = +g.weight || 1; s2 += v * w; w2 += w; n++;
+    }
+    const avg = w2 ? s2 / w2 : null, cw = catWeight(sid, cat, cfg);
+    if (avg != null && cw > 0) { sum += avg * cw; wsum += cw; }
+    return {cat, avg, sum: s2, w: w2, weight: cw};
+  });
+  return {avg: wsum ? sum / wsum : null, n, per};
+}
+/* The grade needed in the next test of a category (counting once) to reach `target`; null when impossible. */
+function neededGrade(sid, catId, target, cfg = gradeCfg()) {
+  const a = subjectAverage(sid, gradesIn(sid), cfg), p = a.per.find(x => x.cat.id === catId);
+  if (!p || !(p.weight > 0) || !Number.isFinite(target)) return null;
+  const others = a.per.filter(x => x !== p && x.avg != null && x.weight > 0);
+  const W = others.reduce((s, x) => s + x.weight, 0) + p.weight, O = others.reduce((s, x) => s + x.avg * x.weight, 0);
+  const catAvgNeeded = (target * W - O) / p.weight;
+  return catAvgNeeded * (p.w + 1) - p.sum;
+}
 
 /* ================= Rendering ================= */
 const chip = s => s ? `<span class="chip" style="background:${s.color}22;color:${s.color}"><i style="background:${s.color}"></i>${esc(s.name)}</span>` : '';
@@ -482,6 +556,40 @@ const VIEWS = {
     if (past.length) h += `<div class="group-h">${esc(t('g.past'))} · ${past.length}</div>` + past.reverse().slice(0, 30).map(e => eventRow(e)).join('');
     return h;
   },
+  grades() {
+    const cfg = gradeCfg(), tm = terms(), list = plan.subjects.filter(s => gradesIn(s.id).length);
+    const avgs = list.map(s => subjectAverage(s.id).avg).filter(v => v != null);
+    const overall = avgs.length ? avgs.reduce((a, b) => a + b, 0) / avgs.length : null;
+    const count = list.reduce((n, s) => n + gradesIn(s.id).length, 0);
+    const card = s => {
+      const a = subjectAverage(s.id), gs = gradesIn(s.id).slice().sort((x, y) => (x.date || '').localeCompare(y.date || ''));
+      return `<div class="pcard gcard"><h2>${chip(s)}<span class="flex"></span><span class="badge ${gradeTone(a.avg)}" title="${esc(t('grade.avgOf', {n: a.n}))}">Ø ${esc(fmtGrade(a.avg))}</span></h2>
+        ${a.per.filter(p => gs.some(g => catOf(g).id === p.cat.id)).map(p => `<div class="grow-row"><span class="gcat">${esc(p.cat.name)} <span class="meta">${p.weight} %</span></span>
+          <span class="gchips">${gs.filter(g => catOf(g).id === p.cat.id).map(g => `<button class="gchip ${gradeTone(gradeValue(g.value))}${sel && sel.kind === 'grade' && sel.id === g.id ? ' sel' : ''}" data-grade="${g.id}" title="${esc([g.title, validIso(g.date) ? fmtDate(g.date) : '', (+g.weight || 1) !== 1 ? '×' + g.weight : ''].filter(Boolean).join(' · '))}">${esc(g.value || '–')}${(+g.weight || 1) !== 1 ? `<sub>×${esc(g.weight)}</sub>` : ''}</button>`).join('')}</span>
+          <span class="meta">Ø ${esc(fmtGrade(p.avg))}</span></div>`).join('')}</div>`;
+    };
+    const opts = (arr, cur) => arr.map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(cur) ? ' selected' : ''}>${esc(l)}</option>`).join('');
+    const calc = settings.gradeCalc || {};
+    let res = '';
+    if (calc.subject && calc.target) {
+      const need = neededGrade(calc.subject, calc.cat || cfg.cats[0].id, gradeValue(calc.target) ?? NaN), sc = SCALES[cfg.scale];
+      res = need == null ? '' : (cfg.scale === 'g16' ? need < sc.min - 0.3 : need > sc.max) ? t('grade.calcNo')
+        : (cfg.scale === 'g16' ? need >= sc.max : need <= sc.min) ? t('grade.calcSafe') : t('grade.calcNeed', {g: fmtGrade(need)});
+    }
+    return `<div class="view-title"><h1>${esc(t('view.grades'))}</h1><span class="sub">${esc(count ? t('grade.overall', {avg: fmtGrade(overall), n: count}) : t('grade.hint'))}</span></div>
+      <div class="quick"><select id="qSubject">${subjectOptions('')}</select>
+        <input class="field-in" id="qGrade" style="width:90px" placeholder="${esc(t('grade.valuePh.' + cfg.scale))}">
+        <select id="qCat">${opts(cfg.cats.map(c => [c.id, c.name]), settings.gradeLastCat || '')}</select>
+        <input class="field-in title-in" id="qTitle" placeholder="${esc(t('grade.titlePh'))}"><input type="date" id="qDate">
+        <button class="btn-sm primary" id="qAdd">${esc(t('ui.add'))}</button></div>
+      ${tm.length ? `<div class="weeknav"><span class="meta">${esc(t('grade.term'))}</span><select class="wt-sel" data-gterm>${opts([['', t('grade.allTerms')], ...tm.map(x => [x.id, x.name])], settings.gradeTerm || '')}</select></div>` : ''}
+      <div class="cards">${list.map(card).join('') || `<div class="empty-s">${esc(t('grade.none'))}</div>`}
+        <div class="pcard"><h2>${esc(t('grade.calc'))}</h2>
+          <div class="calc"><select data-gcalc="subject">${opts([['', t('ui.noSubject')], ...plan.subjects.map(s => [s.id, s.name])], calc.subject || '')}</select>
+            <select data-gcalc="cat">${opts(cfg.cats.map(c => [c.id, c.name]), calc.cat || '')}</select>
+            <input class="field-in" data-gcalc="target" style="width:80px" value="${esc(calc.target || '')}" placeholder="${esc(t('grade.targetPh'))}"></div>
+          <div class="calc-res">${esc(res || t('grade.calcHint'))}</div></div></div>`;
+  },
   subjects() {
     return `<div class="view-title"><h1>${esc(t('ui.subjects'))}</h1><span class="sub">${esc(t('ui.subjectsHint'))}</span></div>
       <div class="quick"><input class="field-in title-in" id="qTitle" placeholder="${esc(t('ui.subjectPh'))}"><button class="btn-sm primary" id="qAdd">${esc(t('ui.add'))}</button></div>
@@ -509,7 +617,7 @@ function renderView() {
   if (keep.title && $('#qTitle')) $('#qTitle').value = keep.title;
   if (keep.subject && $('#qSubject')) $('#qSubject').value = keep.subject;
   if ($('#qDue') && !$('#qDue').value) $('#qDue').value = nextLesson($('#qSubject').value);
-  if ($('#qDate') && !$('#qDate').value) $('#qDate').value = addDays(today(), 7);
+  if ($('#qDate') && !$('#qDate').value) $('#qDate').value = settings.view === 'grades' ? today() : addDays(today(), 7);
   if (focus && $('#' + focus)) $('#' + focus).focus();
   $$('#tools .ibtn.view').forEach(b => b.classList.toggle('active', b.dataset.act === 'view' + settings.view[0].toUpperCase() + settings.view.slice(1)));
 }
@@ -578,7 +686,19 @@ function renderDetails() {
       ${field('ui.dateTime', `<div class="two"><input type="date" data-f="date" value="${esc(e.date || '')}"><input type="time" data-f="time" value="${esc(e.time || '')}"></div>`)}
       ${e.time ? field('ui.minutes', `<input class="field-in" type="number" min="5" max="600" step="5" data-f="minutes" value="${esc(e.minutes || 90)}">`) : ''}
       ${field('ui.notes', `<textarea data-f="notes" placeholder="${esc(t('ui.eventNotesPh'))}">${esc(e.notes || '')}</textarea>`)}
-      <p><button class="btn-sm" data-copy-week>${esc(t('ui.copyWeek'))}</button> <button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
+      <p><button class="btn-sm" data-copy-week>${esc(t('ui.copyWeek'))}</button> ${['exam', 'test', 'talk'].includes(e.type) ? `<button class="btn-sm" data-grade-for="${e.id}">${esc(t(grades().some(g => g.event === e.id) ? 'grade.showForEvent' : 'grade.forEvent'))}</button> ` : ''}<button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
+  } else if (sel.kind === 'grade') {
+    const g = grades().find(y => y.id === sel.id); if (!g) return;
+    const cfg = gradeCfg(), v = gradeValue(g.value);
+    box.innerHTML = `<div class="sect">${esc(t('grade.one'))}</div>
+      ${field('ui.subject', `<select data-f="subject">${subjectOptions(g.subject)}</select>`)}
+      ${field('grade.value', `<input class="field-in" data-f="value" value="${esc(g.value || '')}" placeholder="${esc(t('grade.valuePh.' + cfg.scale))}"><div class="meta">${esc(g.value && v == null ? t('grade.bad') : v != null ? t('grade.counts', {v: fmtGrade(v)}) : t('grade.empty'))}</div>`)}
+      ${field('grade.cat', `<select data-f="cat">${cfg.cats.map(c => `<option value="${esc(c.id)}"${catOf(g).id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select>`)}
+      ${field('grade.weight', `<select data-f="weight">${[0.5, 1, 2, 3].map(w => `<option value="${w}"${(+g.weight || 1) === w ? ' selected' : ''}>${esc(t('grade.times', {w: lang === 'de' ? String(w).replace('.', ',') : w}))}</option>`).join('')}</select>`)}
+      ${field('ui.title', `<input class="field-in" data-f="title" value="${esc(g.title || '')}" placeholder="${esc(t('grade.titlePh'))}">`)}
+      ${field('grade.date', `<input type="date" data-f="date" value="${esc(g.date || '')}">`)}
+      ${field('ui.notes', `<textarea data-f="notes">${esc(g.notes || '')}</textarea>`)}
+      <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
   } else if (sel.kind === 'subject') {
     const s = subj(sel.id); if (!s) return;
     box.innerHTML = `<div class="sect">${esc(t('ui.subject'))}</div>
@@ -588,6 +708,7 @@ function renderDetails() {
       ${field('ui.teacher', `<input class="field-in" data-f="teacher" value="${esc(s.teacher || '')}">`)}
       ${field('ui.roomDefault', `<input class="field-in" data-f="room" value="${esc(s.room || '')}">`)}
       ${field('tt.group', `<input class="field-in" data-f="group" list="groupList" value="${esc(s.group || '')}" placeholder="${esc(t('tt.groupPh'))}">${groupList()}<div class="meta">${esc(t('tt.groupHint'))}</div>`)}
+      ${field('grade.subjectWeights', `<div class="term-checks">${gradeCfg().cats.map(c => `<label>${esc(c.name)} <input class="field-in" style="width:56px" data-sweight="${esc(c.id)}" value="${esc((gradeCfg().subjectWeights[s.id] || {})[c.id] ?? '')}" placeholder="${esc(c.weight)}"> %</label>`).join('')}</div><div class="meta">${esc(t('grade.subjectWeightsHint'))}</div>`)}
       ${s.group ? (() => {
         const slots = [...new Set(plan.lessons.filter(l => l.group === s.group).map(l => `${l.day}|${l.period}`))].sort();
         return field('area.category', `<input class="field-in" data-f="category" list="catList" value="${esc(s.category || '')}" placeholder="${esc(t('area.categoryPh'))}"><datalist id="catList">${categoriesOf(s.group).map(k => `<option value="${esc(k)}">`).join('')}</datalist>`)
@@ -642,6 +763,8 @@ view.addEventListener('click', e => {
   if (ev) { sel = {kind: 'event', id: ev.dataset.event}; showDetails(); return; }
   const cell = e.target.closest('td.c:not(.off)');
   if (cell) { sel = {kind: 'cell', day: +cell.dataset.day, period: +cell.dataset.period}; showDetails(); return; }
+  const gr = e.target.closest('[data-grade]');
+  if (gr) { sel = {kind: 'grade', id: gr.dataset.grade}; showDetails(); return; }
   const row = e.target.closest('[data-task],[data-event],[data-subject]');
   if (row && !e.target.closest('input')) {
     sel = row.dataset.task ? {kind: 'task', id: row.dataset.task} : row.dataset.event ? {kind: 'event', id: row.dataset.event} : {kind: 'subject', id: row.dataset.subject};
@@ -655,6 +778,8 @@ $('#weekAhead').addEventListener('click', e => {
   if (row) { sel = row.dataset.task ? {kind: 'task', id: row.dataset.task} : {kind: 'event', id: row.dataset.event}; settings.dockTab = 'details'; applySettings(); renderView(); }
 });
 view.addEventListener('change', e => {
+  if (e.target.matches('[data-gterm]')) { settings.gradeTerm = e.target.value; saveSettings(); renderView(); return; }
+  if (e.target.dataset.gcalc) { settings.gradeCalc = {...(settings.gradeCalc || {}), [e.target.dataset.gcalc]: e.target.value.trim()}; saveSettings(); renderView(); return; }
   if (e.target.matches('[data-wt]')) {
     const c = cycle(), m = shownMonday(), v = e.target.value;
     change(() => { c.overrides = {...(c.overrides || {})}; if (v) c.overrides[m] = v; else delete c.overrides[m]; });
@@ -676,6 +801,15 @@ function quickAdd() {
     change(() => plan.events.push(e));
     $('#qTitle').value = ''; $('#qTime').value = '';
     toast(t('toast.eventAdded'));
+  } else if (settings.view === 'grades') {
+    const value = ($('#qGrade').value || '').trim(), subject = $('#qSubject').value;
+    if (!subject) return $('#qSubject').focus();
+    if (value && gradeValue(value) == null) { toast(t('grade.bad')); return $('#qGrade').focus(); }
+    const g = {id: uid(), subject, value, cat: $('#qCat').value, date: $('#qDate').value || today(), title, weight: 1, notes: ''};
+    settings.gradeLastCat = g.cat;
+    change(() => { plan.grades = [...grades(), g]; });
+    $('#qGrade').value = ''; $('#qTitle').value = ''; $('#qGrade').focus();
+    toast(t('grade.added'));
   } else if (settings.view === 'subjects') {
     if (!title) return $('#qTitle').focus();
     const s = {id: uid(), name: title, short: title.slice(0, 2), color: COLORS[plan.subjects.length % COLORS.length], teacher: '', room: ''};
@@ -697,6 +831,15 @@ $('#details').addEventListener('change', e => {
     change(() => { plan.areas = {...(plan.areas || {}), [l.group]: {...areaOf(l.group), optional: on}}; });
     return;
   }
+  if (e.target.dataset.sweight != null && sel && sel.kind === 'subject') {
+    const id = sel.id, cat = e.target.dataset.sweight, v = e.target.value.trim().replace(',', '.');
+    change(() => {
+      const cfg = plan.gradeCfg = {...(plan.gradeCfg || {})}, sw = cfg.subjectWeights = {...(cfg.subjectWeights || {})};
+      sw[id] = {...(sw[id] || {})};
+      if (v === '' || !Number.isFinite(+v)) delete sw[id][cat]; else sw[id][cat] = Math.max(0, +v);
+    });
+    return;
+  }
   if (e.target.dataset.lskip) {
     const l = plan.lessons.find(x => x.id === e.target.dataset.lskip), date = addDays(shownMonday(), sel.day);
     if (l) change(() => { const set = new Set(l.skip || []); e.target.checked ? set.add(date) : set.delete(date); l.skip = [...set].filter(x => x >= addDays(today(), -400)).sort(); });
@@ -713,10 +856,11 @@ $('#details').addEventListener('change', e => {
     return;
   }
   if (!f || !sel) return;
-  const obj = sel.kind === 'task' ? plan.tasks.find(x => x.id === sel.id) : sel.kind === 'event' ? plan.events.find(x => x.id === sel.id) : subj(sel.id);
+  const obj = sel.kind === 'task' ? plan.tasks.find(x => x.id === sel.id) : sel.kind === 'event' ? plan.events.find(x => x.id === sel.id)
+    : sel.kind === 'grade' ? grades().find(x => x.id === sel.id) : subj(sel.id);
   if (!obj) return;
   const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-  change(() => { obj[f] = f === 'minutes' ? clamp(Math.round(+v) || 90, 5, 600) : typeof v === 'string' && f !== 'notes' ? v.trim() : v; });
+  change(() => { obj[f] = f === 'minutes' ? clamp(Math.round(+v) || 90, 5, 600) : f === 'weight' ? +v || 1 : typeof v === 'string' && f !== 'notes' ? v.trim() : v; });
 });
 $('#details').addEventListener('click', e => {
   const a = e.target.closest('[data-assign]');
@@ -756,6 +900,18 @@ $('#details').addEventListener('click', e => {
     change(() => plan.lessons.push({id: uid(), day, period, subject: '', group: cur ? cur.group || '' : '', room: '', terms: !first && free ? [free.id] : []}));
     return;
   }
+  const gf = e.target.closest('[data-grade-for]');
+  if (gf) {
+    const ev = plan.events.find(y => y.id === gf.dataset.gradeFor); if (!ev) return;
+    let g = grades().find(x => x.event === ev.id);
+    if (!g) {
+      g = {id: uid(), subject: ev.subject || '', value: '', cat: gradeCfg().cats[0].id, date: ev.date || today(), title: ev.title || t('type.' + ev.type), weight: 1, notes: '', event: ev.id};
+      change(() => { plan.grades = [...grades(), g]; });
+    }
+    sel = {kind: 'grade', id: g.id}; setView('grades');
+    setTimeout(() => { const i = $('#details [data-f="value"]'); if (i) i.focus(); }, 0);
+    return;
+  }
   if (e.target.closest('[data-copy-week]')) {
     const ev = plan.events.find(y => y.id === sel.id); if (!ev || !validIso(ev.date)) return;
     const copy = {...ev, id: uid(), date: addDays(ev.date, 7)};
@@ -785,7 +941,7 @@ function deleteSel() {
     const id = sel.id;
     change(() => { plan.subjects = plan.subjects.filter(s => s.id !== id); plan.lessons = plan.lessons.filter(l => l.subject !== id); });
   } else {
-    const key = sel.kind === 'task' ? 'tasks' : 'events', id = sel.id;
+    const key = sel.kind === 'task' ? 'tasks' : sel.kind === 'grade' ? 'grades' : 'events', id = sel.id;
     change(() => { plan[key] = plan[key].filter(x => x.id !== id); });
   }
   sel = null; renderAll();
@@ -856,7 +1012,8 @@ const A = {
   newSubject: () => { setView('subjects'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
   importPlan: () => importPlan(), exportBackup, exportIcs, print,
   undo, redo, deleteSel,
-  viewToday: () => setView('today'), viewWeek: () => setView('week'), viewTasks: () => setView('tasks'), viewEvents: () => setView('events'), viewSubjects: () => setView('subjects'),
+  viewToday: () => setView('today'), viewWeek: () => setView('week'), viewTasks: () => setView('tasks'), viewEvents: () => setView('events'), viewSubjects: () => setView('subjects'), viewGrades: () => setView('grades'),
+  newGrade: () => { setView('grades'); setTimeout(() => $('#qSubject') && $('#qSubject').focus(), 0); }, gradeSettings: () => openSettings('grades'),
   togglePanels: () => { settings.dock = !settings.dock; applySettings(); },
   toggleAutoHide: () => { settings.autoHide = !settings.autoHide; applySettings(); },
   settings: () => openSettings(), timetableSettings: () => openSettings('timetable'), calendarSettings: () => openSettings('calendars'),
@@ -881,9 +1038,9 @@ const A = {
 const MENUS = [
   ['file', [['importPlan', 'Ctrl+O'], ['exportBackup', 'Ctrl+S'], '-', ['exportIcs', 'Ctrl+E'], ['print', 'Ctrl+P']]],
   ['edit', [['undo', 'Ctrl+Z', null, false, ['Ctrl+Shift+Z']], ['redo', 'Ctrl+Y'], '-', ['deleteSel', 'Delete', null, true]]],
-  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newSubject'], '-', ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
+  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newSubject'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
   ['view', [['viewToday', 'Alt+1', () => settings.view === 'today'], ['viewWeek', 'Alt+2', () => settings.view === 'week'], ['viewTasks', 'Alt+3', () => settings.view === 'tasks'],
-    ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], '-',
+    ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], ['viewGrades', 'Alt+6', () => settings.view === 'grades'], '-',
     ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
   ['settings', [['settings', 'Ctrl+,'], '-', '#menu.language',
     ['langAuto', null, () => settings.lang === 'auto'], ['langEn', null, () => settings.lang === 'en'], ['langDe', null, () => settings.lang === 'de'],
@@ -939,6 +1096,7 @@ const ICONS = {
   tasks: SV('<path d="m4 7 2 2 4-4M4 17l2 2 4-4M13 7h8M13 17h8"/>'),
   events: SV('<path d="M12 2 3 6v6c0 5 4 9 9 10 5-1 9-5 9-10V6z"/><path d="m9 12 2 2 4-4"/>'),
   subjects: SV('<path d="M4 19V5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h13"/>'),
+  grades: SV('<path d="M4 20h16M7 16V10M12 16V5M17 16v-8"/>'),
   open: SV('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
   save: SV('<path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8M7 21v-7h10v7"/>'),
   undo: SV('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>'),
@@ -959,7 +1117,7 @@ function buildToolbars() {
   fill('#fileBtns', [['importPlan', ICONS.open], ['exportBackup', ICONS.save], ['undo', ICONS.undo], ['redo', ICONS.redo]]);
   fill('#viewBtns', [['exportIcs', ICONS.ics], ['print', ICONS.print], ['togglePanels', ICONS.panel], ['settings', ICONS.gear], ['shortcuts', ICONS.help]]);
   const tools = $('#tools'); tools.innerHTML = '';
-  [['viewToday', 'today'], ['viewWeek', 'week'], ['viewTasks', 'tasks'], ['viewEvents', 'events'], ['viewSubjects', 'subjects']].forEach(([a, i]) => tools.append(makeBtn(a, ICONS[i], 'view')));
+  [['viewToday', 'today'], ['viewWeek', 'week'], ['viewTasks', 'tasks'], ['viewEvents', 'events'], ['viewGrades', 'grades'], ['viewSubjects', 'subjects']].forEach(([a, i]) => tools.append(makeBtn(a, ICONS[i], 'view')));
   $('#ctxBar').innerHTML = '';
   $$('[data-act="togglePanels"]').forEach(b => b.classList.toggle('active', settings.dock));
   syncDisabled();
@@ -1038,6 +1196,15 @@ function renderSettings() {
         ${cycle() && Object.keys(c.overrides || {}).length ? `<p class="hint">${esc(t('set.overrides', {list: Object.entries(c.overrides).sort().map(([m, nm]) => `${fmtDate(m, {day: 'numeric', month: 'numeric'})}: ${nm}`).join(', ')}))}
           <button class="btn-sm" data-cycle-clear>${esc(t('set.clearOverrides'))}</button></p>` : ''}`;
     })(),
+    grades: (() => {
+      const cfg = gradeCfg(), sum = cfg.cats.reduce((n, c) => n + (+c.weight || 0), 0);
+      return `<h3>${esc(t('grade.scale'))}</h3><select class="wide-sel" data-gcfg="scale">${['g16', 'p15', 'pct'].map(k => opt(k, t('grade.scale.' + k), cfg.scale)).join('')}</select>
+        ${cfg.scale === 'g16' ? `<h3>${esc(t('grade.plus'))}</h3><p class="hint">${esc(t('grade.plusHint'))}</p><select class="wide-sel" data-gcfg="plus">${[0.25, 0.3, 0.33, 0.5].map(v => opt(v, t('grade.plusOpt', {v: lang === 'de' ? String(v).replace('.', ',') : v}), cfg.plus)).join('')}</select>` : ''}
+        <h3>${esc(t('grade.cats'))}</h3><p class="hint">${esc(t('grade.catsHint'))}</p>
+        ${cfg.cats.map(c => `<div class="term-row"><input class="field-in" data-gcat="${esc(c.id)}|name" value="${esc(c.name)}"><input class="field-in" style="width:64px" data-gcat="${esc(c.id)}|weight" value="${esc(c.weight)}"><span>%</span>${cfg.cats.length > 1 ? `<button class="btn-sm danger-btn" data-gcat-del="${esc(c.id)}">${esc(t('cal.remove'))}</button>` : ''}</div>`).join('')}
+        ${sum !== 100 ? `<p class="hint">${esc(t('grade.sumHint', {n: sum}))}</p>` : ''}
+        <p><button class="btn-sm" data-gcat-add>${esc(t('grade.addCat'))}</button></p>`;
+    })(),
     electives: (() => {
       const gs = groups();
       const areaBox = g => { const a = areaOf(g), cats = categoriesOf(g);
@@ -1075,7 +1242,7 @@ function renderSettings() {
     })(),
     keys: '<div id="keysBox"></div>'
   };
-  const sections = ['general', 'appearance', 'timetable', 'year', 'electives', 'calendars', 'mycal', 'keys'];
+  const sections = ['general', 'appearance', 'timetable', 'year', 'electives', 'grades', 'calendars', 'mycal', 'keys'];
   $('#modalTitle').textContent = t('set.title');
   $('#modalBody').innerHTML = `<div class="prefs"><nav>${sections.map(k =>
     `<button data-sec="${k}" class="${k === prefsSection ? 'active' : ''}">${esc(t('set.' + k))}</button>`).join('')}</nav><section>${body[prefsSection]}</section></div>`;
@@ -1086,6 +1253,17 @@ function renderSettings() {
 }
 $('#modal').addEventListener('click', e => {
   if (!settingsOpen) return;
+  if (e.target.closest('[data-gcat-add]')) {
+    change(() => { const c = gradeCfg(); plan.gradeCfg = {...(plan.gradeCfg || {}), cats: [...c.cats, {id: uid(), name: t('grade.newCat'), weight: 0}]}; });
+    renderSettings(); return;
+  }
+  const gd = e.target.closest('[data-gcat-del]');
+  if (gd) {
+    const id = gd.dataset.gcatDel, c = gradeCfg();
+    if (grades().some(g => catOf(g, c).id === id) && !confirm(t('grade.delCatAsk'))) return;
+    change(() => { plan.gradeCfg = {...(plan.gradeCfg || {}), cats: c.cats.filter(x => x.id !== id)}; });
+    renderSettings(); return;
+  }
   if (e.target.closest('[data-cycle-clear]')) { change(() => { plan.weekCycle.overrides = {}; }); renderSettings(); return; }
   const ra = e.target.closest('[data-range-add]');
   if (ra) {
@@ -1136,6 +1314,19 @@ $('#modal').addEventListener('change', e => {
   if (d.range) {
     const [kind, id, k] = d.range.split('|'), x = (plan[kind] || []).find(y => y.id === id), v = e.target.value.trim();
     if (x && (k === 'name' ? v : validIso(v))) change(() => { x[k] = v; if (x.from > x.to) x[k === 'from' ? 'to' : 'from'] = v; });
+    renderSettings(); return;
+  }
+  if (d.gcfg) {
+    const v = d.gcfg === 'plus' ? +e.target.value : e.target.value;
+    change(() => { plan.gradeCfg = {...(plan.gradeCfg || {}), [d.gcfg]: v}; });
+    renderSettings(); return;
+  }
+  if (d.gcat) {
+    const [id, k] = d.gcat.split('|'), v = e.target.value.trim().replace(',', '.');
+    change(() => {
+      const c = gradeCfg();
+      plan.gradeCfg = {...(plan.gradeCfg || {}), cats: c.cats.map(x => x.id !== id ? x : {...x, [k]: k === 'weight' ? Math.max(0, +v || 0) : v || x.name})};
+    });
     renderSettings(); return;
   }
   if (d.planText) { change(() => { plan[d.planText] = e.target.value.trim(); }); return; }
