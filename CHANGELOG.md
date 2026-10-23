@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1 — 2026-10-23
+- Normal timetable slots offer only normal subjects; offers of elective areas appear only in elective slots.
+- Blocked slots: Settings → Timetable has a grid of days × periods — click a slot to block it (no lessons there), e.g.
+  Saturday afternoon. It replaces "Length of each day"; days shortened before are taken over.
+- Courses with their own times move to the period they start in, and show in every further period they reach into
+  ("↳ name", a click goes to the course).
+- The catalog paste in Settings → Elective areas is gone (offers are added in Subjects).
+
 ## 0.7.0 — 2026-10-23
 - New: grade tracker (view "Grades", Alt+6, Plan → New Grade Ctrl+G). Grades per subject in your school's system —
   1–6 with tendencies (2+ / 2−; how much they count is set in Settings → Grades), 0–15 points or percent. Categories with
