@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0 — 2026-10-24
+- First stable version — no longer Pre-Alpha. Plans made with any earlier version (back to 0.1.0) open unchanged;
+  backups and imports keep everything.
+- What it does: Today, a timetable that can change (terms, alternating weeks by pattern or by the holidays, blocked slots,
+  courses with their own times, rooms per day), homework, exams and dates, elective areas chosen per week, grades with
+  weights, a study planner with timer, linked calendars, the plan in your own calendar (iCloud / subscription), and the
+  plan shared by two computers through a sync folder — offline, without an account, in German and English.
+
 ## 0.9.0 — 2026-10-24
 - Studio Sync: with a sync folder chosen in Studio Hub (e.g. in iCloud Drive, OneDrive, Dropbox or on a USB stick), the plan
   — timetable, homework, grades, electives, study plans — is kept there, so two computers share it. The first computer
