@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.7 — 2026-10-24
+- Dates and homework in the narrow cards of Today and in the next-7-days panel are easier to read: the title on its own
+  line (wrapping instead of being cut off), with "in 4 days" next to it, and type · subject · date small below. Nothing
+  sticks out of the card any more.
+
 ## 0.7.6 — 2026-10-24
 - Grades can be switched off per subject ("No grades in this subject" in the subject's details), e.g. for clubs or
   electives: the subject leaves the grade view, the overall average and the calculator; grades entered before are kept.

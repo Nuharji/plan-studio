@@ -467,12 +467,28 @@ function dueBadge(iso, done) {
   const n = dayDiff(today(), iso), cls = done ? '' : n < 0 ? ' red' : n <= 1 ? ' warn' : '';
   return `<span class="badge${cls}" title="${esc(fmtDate(iso, {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}))}">${esc(relDay(iso))}</span>`;
 }
-function taskRow(x) {
+/* Narrow places (the cards of Today, the next 7 days): the title on its own line, the details small below it. */
+const subjDot = s => s ? `<span class="tl-subj" style="color:${s.color}"><i style="background:${s.color}"></i>${esc(s.name)}</span>` : '';
+function taskRow(x, compact = false) {
+  if (compact === true) {
+    const s = subj(x.subject);
+    return `<div class="row two-line${x.done ? ' done' : ''}${sel && sel.kind === 'task' && sel.id === x.id ? ' sel' : ''}" data-task="${x.id}">
+      <div class="tl-main"><input type="checkbox" data-done="${x.id}"${x.done ? ' checked' : ''} title="${esc(t('ui.markDone'))}"><span class="grow tl-title">${esc(x.title)}</span>${dueBadge(x.due, x.done)}</div>
+      ${s ? `<div class="tl-sub tl-indent">${subjDot(s)}</div>` : ''}</div>`;
+  }
   return `<div class="row${x.done ? ' done' : ''}${sel && sel.kind === 'task' && sel.id === x.id ? ' sel' : ''}" data-task="${x.id}">
     <input type="checkbox" data-done="${x.id}"${x.done ? ' checked' : ''} title="${esc(t('ui.markDone'))}">${chip(subj(x.subject))}
     <span class="grow">${esc(x.title)}</span>${dueBadge(x.due, x.done)}</div>`;
 }
 function eventRow(e, withDate = true) {
+  if (!withDate) {
+    const s = subj(e.subject);
+    const parts = [`<span class="tl-type ${e.type}">${esc(t('type.' + e.type))}</span>`, subjDot(s),
+      validIso(e.date) ? `<span>${esc(fmtDate(e.date))}${e.time ? ' · ' + esc(e.time) : ''}</span>` : ''].filter(Boolean);
+    return `<div class="row two-line${sel && sel.kind === 'event' && sel.id === e.id ? ' sel' : ''}" data-event="${e.id}">
+      <div class="tl-main"><span class="grow tl-title">${esc(e.title || (s || {}).name || t('type.' + e.type))}</span>${validIso(e.date) ? dueBadge(e.date, dayDiff(today(), e.date) < 0) : ''}</div>
+      <div class="tl-sub">${parts.join('<span class="tl-sep">·</span>')}</div></div>`;
+  }
   return `<div class="row${sel && sel.kind === 'event' && sel.id === e.id ? ' sel' : ''}" data-event="${e.id}">
     ${typeBadge(e.type)}${chip(subj(e.subject))}<span class="grow">${esc(e.title)}</span>
     ${withDate && validIso(e.date) ? `<span class="meta">${esc(fmtDate(e.date))}${e.time ? ' · ' + esc(e.time) : ''}</span>` : ''}${validIso(e.date) ? dueBadge(e.date, dayDiff(today(), e.date) < 0) : ''}</div>`;
@@ -508,8 +524,8 @@ const VIEWS = {
                 ${dl ? `<span class="badge${late ? ' red' : o.date === d ? ' warn' : ''}">${esc(t('area.until', {time: dl}))}</span>` : ''}</div>`; }).join('')}</div>`;
         })()}
         <div class="pcard"><h2>${esc(t('ui.homework'))}<button class="btn-sm" data-act="newTask">${esc(t('ui.add'))}</button></h2>
-          ${overdue.length ? `<div class="group-h red">${esc(t('g.overdue'))}</div>${overdue.sort(byDue).map(taskRow).join('')}` : ''}
-          ${soon.length ? soon.sort(byDue).map(taskRow).join('') : overdue.length ? '' : `<div class="empty-s">${esc(t('ui.noHomework'))}</div>`}</div>
+          ${overdue.length ? `<div class="group-h red">${esc(t('g.overdue'))}</div>${overdue.sort(byDue).map(x => taskRow(x, true)).join('')}` : ''}
+          ${soon.length ? soon.sort(byDue).map(x => taskRow(x, true)).join('') : overdue.length ? '' : `<div class="empty-s">${esc(t('ui.noHomework'))}</div>`}</div>
         <div class="pcard"><h2>${esc(t('ui.nextDates'))}<button class="btn-sm" data-act="newEvent">${esc(t('ui.add'))}</button></h2>
           ${nextEvents.length ? nextEvents.map(e => eventRow(e, false)).join('') : `<div class="empty-s">${esc(t('ui.noDates'))}</div>`}</div>
         <div class="pcard"><h2>${esc(t('cal.card'))}<button class="btn-sm" data-act="calendarSettings">${esc(t(calendars().length ? 'cal.manage' : 'cal.link'))}</button></h2>
@@ -813,7 +829,7 @@ function renderWeekAhead() {
     const n = (w < plan.days ? plan.lessons.filter(l => l.day === w && !blockedAt(w, l.period) && lessonOn(l, day) && !choiceOn(l, day).off).length : 0) + classesOn(day).length;
     return `<div class="sect">${esc(i === 0 ? t('d.today') : i === 1 ? t('d.tomorrow') : fmtDate(day, {weekday: 'long', day: 'numeric', month: 'short'}))}
       <span style="float:right;text-transform:none;letter-spacing:0;font-weight:400">${n ? esc(t(n === 1 ? 'ui.nLesson' : 'ui.nLessons', {n})) : ''}</span></div>
-      ${events.map(e => eventRow(e, false)).join('')}${tasks.map(taskRow).join('')}${cal.map(calRow).join('')}${!events.length && !tasks.length && !cal.length ? `<div class="empty-s">—</div>` : ''}`;
+      ${events.map(e => eventRow(e, false)).join('')}${tasks.map(x => taskRow(x, true)).join('')}${cal.map(calRow).join('')}${!events.length && !tasks.length && !cal.length ? `<div class="empty-s">—</div>` : ''}`;
   }).join('');
 }
 function updateStatus() {
