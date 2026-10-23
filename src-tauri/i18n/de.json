@@ -419,5 +419,13 @@
   "study.daysBefore": "Tage vorher",
   "study.minutes": "Min.",
   "study.timer": "Lern-Timer",
-  "study.inCalendar": "Lerneinheiten in meinen Kalender (Abo, iCloud, Kalenderdatei)"
+  "study.inCalendar": "Lerneinheiten in meinen Kalender (Abo, iCloud, Kalenderdatei)",
+  "sync.conflict": "Der Plan wurde gleichzeitig auf einem anderen Computer geändert — dessen Stand liegt als {file} im Sync-Ordner.",
+  "sync.reloaded": "Der Plan wurde auf einem anderen Computer geändert — neu geladen.",
+  "sync.moved": "Dein Plan liegt jetzt im Sync-Ordner ({p}).",
+  "sync.taken": "Im Sync-Ordner lag schon ein Plan (von deinem anderen Computer) — der wird jetzt benutzt. Der Plan dieses Computers ist gesichert: {p}",
+  "sync.where": "Wo dein Plan liegt",
+  "sync.place.local": "Auf diesem Computer. Um ihn mit einem zweiten Computer zu teilen, wähle in Studio Hub einen Sync-Ordner (z. B. in iCloud Drive, OneDrive oder Dropbox).",
+  "sync.place.sync": "Im Sync-Ordner: {p} — Computer mit demselben Sync-Ordner teilen ihn.",
+  "sync.place.portable": "Neben dem Programm (portabel): {p}"
 }

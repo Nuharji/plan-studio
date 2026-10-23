@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0 — 2026-10-24
+- Studio Sync: with a sync folder chosen in Studio Hub (e.g. in iCloud Drive, OneDrive, Dropbox or on a USB stick), the plan
+  — timetable, homework, grades, electives, study plans — is kept there, so two computers share it. The first computer
+  brings its plan there; on the second one the plan from the sync folder is used and its own earlier plan is kept as a copy.
+- Changes made on the other computer are loaded when you come back to the window (or within 20 seconds). If both changed
+  the plan at the same time, the other version is kept as plan-conflict-….json in the sync folder. Settings → General
+  shows where your plan is.
+
 ## 0.8.0 — 2026-10-24
 - New: study planner. Exams, tests and presentations get topics to tick off (with progress) and "Make study plan": the
   study time (set per type, or per exam) is spread over the days before it in sessions — at most so many minutes a day,

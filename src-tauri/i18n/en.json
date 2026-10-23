@@ -419,5 +419,13 @@
   "study.daysBefore": "days before",
   "study.minutes": "min",
   "study.timer": "Study timer",
-  "study.inCalendar": "Study sessions in my calendar (subscription, iCloud, calendar file)"
+  "study.inCalendar": "Study sessions in my calendar (subscription, iCloud, calendar file)",
+  "sync.conflict": "The plan was changed on another computer at the same time — its version is kept as {file} in the sync folder.",
+  "sync.reloaded": "The plan was changed on another computer — loaded.",
+  "sync.moved": "Your plan is now in the sync folder ({p}).",
+  "sync.taken": "The sync folder already had a plan (from your other computer) — it is used now. This computer's plan was kept: {p}",
+  "sync.where": "Where your plan is",
+  "sync.place.local": "On this computer. To share it with a second computer, choose a sync folder in Studio Hub (e.g. in iCloud Drive, OneDrive or Dropbox).",
+  "sync.place.sync": "In the sync folder: {p} — computers with the same sync folder share it.",
+  "sync.place.portable": "Next to the program (portable): {p}"
 }

@@ -4,6 +4,7 @@
 mod caldav;
 mod feed;
 mod shared;
+mod store;
 mod ical;
 mod ics;
 
@@ -46,24 +47,48 @@ fn texts() -> serde_json::Value {
     serde_json::json!({"en": parse(include_str!("../i18n/en.json")), "de": parse(include_str!("../i18n/de.json"))})
 }
 
-/// Where the plan lives: the app's data folder (Windows: %APPDATA%\com.planstudio.app, macOS: ~/Library/Application
-/// Support/com.planstudio.app). A portable copy (plan.json next to the program) wins, so a USB stick keeps its plan.
-fn plan_path(app: &AppHandle) -> Result<PathBuf, String> {
-    if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
-        let portable = dir.join("plan.json");
-        if portable.exists() { return Ok(portable); }
-    }
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join("plan.json"))
+/// Where the plan lives (store.rs): a portable copy next to the program, else the sync folder of Studio Hub, else the
+/// app's data folder (Windows: %APPDATA%\com.planstudio.app, macOS: ~/Library/Application Support/com.planstudio.app).
+/// The place is decided when the plan is loaded and kept until the app is closed: a sync folder chosen meanwhile in
+/// Studio Hub counts from the next start (then the plan is brought there safely, see store::prepare_sync).
+static PLACE: Mutex<Option<store::Place>> = Mutex::new(None);
+fn plan_place(app: &AppHandle) -> Result<store::Place, String> {
+    if let Some(p) = PLACE.lock().unwrap().clone() { return Ok(p); }
+    find_place(app)
+}
+fn find_place(app: &AppHandle) -> Result<store::Place, String> {
+    let portable = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("plan.json")));
+    let local = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&local).map_err(|e| e.to_string())?;
+    Ok(store::place(portable, shared::sync_dir(app), &local))
 }
 
-/// The saved plan (JSON text), or None the first time.
+#[derive(Serialize)]
+struct Loaded {
+    content: Option<String>,
+    stamp: u64,
+    /// "portable", "sync" or "local", and the folder.
+    place: &'static str,
+    folder: String,
+    /// What happened when the sync folder was used the first time ("moved", "taken|<copy>").
+    note: Option<String>,
+}
+
+/// The saved plan (JSON text; None the first time), with where it is and its last change.
 #[tauri::command]
-fn plan_load(app: AppHandle) -> Result<Option<String>, String> {
-    let p = plan_path(&app)?;
-    if !p.exists() { return Ok(None); }
-    fs::read_to_string(&p).map(Some).map_err(|e| format!("{}: {e}", p.display()))
+fn plan_load(app: AppHandle) -> Result<Loaded, String> {
+    let pl = plan_place(&app)?;
+    *PLACE.lock().unwrap() = Some(pl.clone());
+    let note = if pl.kind == "sync" { store::prepare_sync(&pl.path, &app.path().app_data_dir().map_err(|e| e.to_string())?)? } else { None };
+    let content = if pl.path.exists() { Some(fs::read_to_string(&pl.path).map_err(|e| format!("{}: {e}", pl.path.display()))?) } else { None };
+    let folder = pl.path.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
+    Ok(Loaded { content, stamp: store::stamp(&pl.path), place: pl.kind, folder, note })
+}
+
+/// The last change of the plan file (to notice changes made on another computer).
+#[tauri::command]
+fn plan_stamp(app: AppHandle) -> u64 {
+    plan_place(&app).map(|p| store::stamp(&p.path)).unwrap_or(0)
 }
 
 /// Saves the plan safely: written to a temporary file first, the previous version is kept as plan.bak.
@@ -74,9 +99,17 @@ pub fn save_atomic(path: &Path, content: &str) -> Result<(), String> {
     fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+#[derive(Serialize)]
+struct Saved {
+    stamp: u64,
+    /// The other computer's version, kept as this file next to the plan.
+    conflict: Option<String>,
+}
+
 #[tauri::command]
-fn plan_save(app: AppHandle, content: String) -> Result<(), String> {
-    save_atomic(&plan_path(&app)?, &content)
+fn plan_save(app: AppHandle, content: String, stamp: Option<u64>) -> Result<Saved, String> {
+    let (stamp, conflict) = store::save_checked(&plan_place(&app)?.path, &content, stamp)?;
+    Ok(Saved { stamp, conflict })
 }
 
 /// Saves text after a save dialog (backup .plan, calendar .ics); returns the path (None = cancelled).
@@ -198,6 +231,7 @@ fn main() {
             texts,
             plan_load,
             plan_save,
+            plan_stamp,
             export_file,
             import_file,
             plan_ics,

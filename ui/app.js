@@ -247,11 +247,35 @@ function change(fn) {
   fn();
   persist(); renderAll();
 }
+/* The plan file: where it is (this computer, sync folder, portable) and its last change, to notice changes made on
+   another computer that shares the sync folder (Rust: store.rs). */
+let planFile = {stamp: 0, place: 'local', folder: ''};
+async function checkOtherComputer() {
+  if (!invoke || !plan || dirty || planFile.place !== 'sync') return;
+  const st = await invoke('plan_stamp').catch(() => 0);
+  if (!st || st === planFile.stamp) return;
+  const r = await invoke('plan_load').catch(() => null);
+  if (!r || dirty) return;
+  let p = null; try { p = JSON.parse(r.content || 'null'); } catch (e) {}
+  if (!validPlan(p)) return;
+  hist.back.push(JSON.stringify(plan)); hist.fwd = [];   // undo goes back to this computer's state
+  plan = p; planFile = {stamp: r.stamp, place: r.place, folder: r.folder};
+  fixSel(); renderAll(); toast(t('sync.reloaded'));
+}
+window.addEventListener('focus', () => checkOtherComputer());
+setInterval(() => checkOtherComputer(), 20000);
 function persist() {
   dirty = true; updateStatus();
   clearTimeout(saveT);
   saveT = setTimeout(async () => {
-    try { if (invoke) await invoke('plan_save', {content: JSON.stringify(plan)}); else saveSettings(); dirty = false; }
+    try {
+      if (invoke) {
+        const r = await invoke('plan_save', {content: JSON.stringify(plan), stamp: planFile.stamp || null});
+        planFile.stamp = r.stamp;
+        if (r.conflict) toast(t('sync.conflict', {file: r.conflict}));
+      } else saveSettings();
+      dirty = false;
+    }
     catch (e) { toast(t('toast.saveFail', {e})); }
     updateStatus();
     pushCalendars();
@@ -1449,7 +1473,8 @@ function renderSettings() {
   const body = {
     general: `<h3>${esc(t('set.language'))}</h3><p class="hint">${esc(t('set.languageHint'))}</p>
       <select class="wide-sel" data-sel="lang">${opt('auto', t('a.langAuto'), settings.lang)}${opt('en', 'English', settings.lang)}${opt('de', 'Deutsch', settings.lang)}</select>
-      <h3>${esc(t('set.layout'))}</h3>${sw('dock', t('set.panels'))}${sw('autoHide', t('set.autoHide'))}`,
+      <h3>${esc(t('set.layout'))}</h3>${sw('dock', t('set.panels'))}${sw('autoHide', t('set.autoHide'))}
+      ${invoke ? `<h3>${esc(t('sync.where'))}</h3><p class="hint">${esc(t('sync.place.' + planFile.place, {p: planFile.folder}))}</p>` : ''}`,
     mycal: `<h3>${esc(t('mycal.what'))}</h3><p class="hint">${esc(t('mycal.whatHint'))}</p>${sw('icsTasks', t('set.icsTasks'))}
       <p class="hint">${esc(t('set.icsWeeksHint'))}</p><select class="wide-sel" data-sel="icsWeeks">${[0, 2, 4, 8, 12, 20].map(n => opt(n, n ? t('set.icsWeeksN', {n}) : t('set.icsWeeks0'), settings.icsWeeks || 0)).join('')}</select>
       <h3>${esc(t('mycal.icloud'))}</h3><p class="hint">${esc(t('mycal.icloudHint'))}</p>
@@ -1798,7 +1823,13 @@ window.__pl = {get plan() { return plan; }, get sel() { return sel; }, A, run, n
   lang = effectiveLang();
   applyLanguage();
   try {
-    const text = invoke ? await invoke('plan_load') : saved && saved.plan ? JSON.stringify(saved.plan) : null;
+    let text = null;
+    if (invoke) {
+      const r = await invoke('plan_load');
+      text = r.content; planFile = {stamp: r.stamp, place: r.place, folder: r.folder};
+      if (r.note === 'moved') toast(t('sync.moved', {p: r.folder}));
+      else if (r.note && r.note.startsWith('taken|')) toast(t('sync.taken', {p: r.note.slice(6)}));
+    } else text = saved && saved.plan ? JSON.stringify(saved.plan) : null;
     const p = text ? JSON.parse(text) : null;
     plan = validPlan(p) ? p : newPlan();
     if (!validPlan(p)) { persist(); }
