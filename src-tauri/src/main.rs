@@ -1,6 +1,8 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod caldav;
+mod feed;
 mod shared;
 mod ical;
 mod ics;
@@ -109,7 +111,9 @@ async fn confirm(app: AppHandle, title: String, message: String, ok_label: Strin
 
 #[tauri::command]
 fn open_url(app: AppHandle, url: String) -> Result<(), String> {
-    if !["https://", "http://", "mailto:"].iter().any(|p| url.starts_with(p)) { return Err(format!("Refusing to open {url}")); }
+    // webcal:// only for the calendar subscription of this computer (feed.rs).
+    let ok = ["https://", "http://", "mailto:"].iter().any(|p| url.starts_with(p)) || url.starts_with("webcal://127.0.0.1:");
+    if !ok { return Err(format!("Refusing to open {url}")); }
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
@@ -186,6 +190,8 @@ fn main() {
             let _ = app.emit("context-menu", event.id().as_ref());
         })
         .manage(Mutex::new(Pending { ready: false, paths: args }))
+        .manage(feed::Feed::default())
+        .manage(caldav::Sync::default())
         .invoke_handler(tauri::generate_handler![
             shared::shared_get,
             shared::shared_set,
@@ -196,6 +202,12 @@ fn main() {
             import_file,
             plan_ics,
             ical::calendar_fetch,
+            feed::feed_start,
+            feed::feed_update,
+            caldav::icloud_status,
+            caldav::icloud_connect,
+            caldav::icloud_sync,
+            caldav::icloud_disconnect,
             confirm,
             open_url,
             print_page,

@@ -23,6 +23,10 @@ and controls as the other Studio apps.
 - **Elective areas:** chosen once or anew every week (each date on its own, "not taking part" too), offers with category,
   week type and the slots they are given in, a deadline and weekly rules ("at least 1 from Languages"); Today reminds you
   of open choices; whole catalogs can be pasted (one line per offer)
+- **In your own calendar:** the plan's dates (and, if you like, homework and the timetable of the next weeks) in a
+  calendar "Plan Studio" in your iCloud account (CalDAV, also on iPhone / iPad; Apple ID + app-specific password, kept on
+  this computer only), and / or as a subscription for calendar apps on this computer (webcal://127.0.0.1…, no account) —
+  both kept up to date after every change
 - **Linked calendars:** paste the subscription address of a Google, Apple / iCloud or Outlook calendar (https:// or webcal://);
   its events show in Today and in the next 7 days, refresh every 30 minutes and stay available offline (read-only)
 - 4 app themes, settings dialog, customizable shortcuts, auto-hide bars, German/English

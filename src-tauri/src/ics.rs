@@ -71,18 +71,32 @@ pub fn utc_stamp() -> String {
 const TYPES_DE: &[(&str, &str)] = &[("exam", "Klausur"), ("test", "Test"), ("talk", "Referat"), ("deadline", "Abgabe"), ("class", "Kurs"), ("other", "Termin")];
 const TYPES_EN: &[(&str, &str)] = &[("exam", "Exam"), ("test", "Test"), ("talk", "Presentation"), ("deadline", "Deadline"), ("class", "Class"), ("other", "Event")];
 
-/// The calendar: one VEVENT per dated event (and per open homework when `tasks`).
+/// The start of a calendar file (its name shows in calendar apps).
+pub fn header(lang: &str) -> String {
+    let mut out = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Studio//Plan Studio//EN\r\nCALSCALE:GREGORIAN\r\n");
+    out += &fold(&format!("X-WR-CALNAME:{}", if lang == "de" { "Schule" } else { "School" }));
+    out
+}
+
+/// The calendar: one VEVENT per dated event (and per open homework when `tasks`, and per lesson in `lessonEvents`).
 pub fn calendar(plan: &Value, lang: &str, tasks: bool, stamp: &str) -> String {
+    let mut out = header(lang);
+    for (_, ev) in events(plan, lang, tasks, stamp) { out += &ev; }
+    out + "END:VCALENDAR\r\n"
+}
+
+/// The events of a plan one by one: (UID, VEVENT text) — for the calendar file, the subscription and the iCloud sync.
+pub fn events(plan: &Value, lang: &str, tasks: bool, stamp: &str) -> Vec<(String, String)> {
     let de = lang == "de";
     let subject = |id: &Value| -> String {
         plan["subjects"].as_array().and_then(|l| l.iter().find(|s| s["id"] == *id)).and_then(|s| s["name"].as_str()).unwrap_or("").to_string()
     };
-    let mut out = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Studio//Plan Studio//EN\r\nCALSCALE:GREGORIAN\r\n");
-    out += &fold(&format!("X-WR-CALNAME:{}", if de { "Schule" } else { "School" }));
+    let mut list: Vec<(String, String)> = Vec::new();
     let mut event = |uid: &str, date: &str, time: Option<&str>, minutes: u32, summary: &str, notes: &str| {
         let Some(d) = ymd(date) else { return };
-        out += "BEGIN:VEVENT\r\n";
-        out += &fold(&format!("UID:{}@plan-studio", esc(uid)));
+        let uid = format!("{}@plan-studio", esc(uid));
+        let mut out = String::from("BEGIN:VEVENT\r\n");
+        out += &fold(&format!("UID:{uid}"));
         out += &format!("DTSTAMP:{stamp}\r\n");
         match time.and_then(hm) {
             Some(t) => { out += &format!("DTSTART:{d}T{t}\r\nDURATION:PT{minutes}M\r\n"); }
@@ -91,6 +105,7 @@ pub fn calendar(plan: &Value, lang: &str, tasks: bool, stamp: &str) -> String {
         out += &fold(&format!("SUMMARY:{}", esc(summary)));
         if !notes.trim().is_empty() { out += &fold(&format!("DESCRIPTION:{}", esc(notes.trim()))); }
         out += "END:VEVENT\r\n";
+        list.push((uid, out));
     };
     for e in plan["events"].as_array().into_iter().flatten() {
         let kind = e["type"].as_str().unwrap_or("other");
@@ -114,15 +129,17 @@ pub fn calendar(plan: &Value, lang: &str, tasks: bool, stamp: &str) -> String {
     for l in plan["lessonEvents"].as_array().into_iter().flatten() {
         let s = |k: &str| l[k].as_str().unwrap_or("").to_string();
         let (Some(d), Some(from), Some(to)) = (ymd(&s("date")), hm(&s("start")), hm(&s("end"))) else { continue };
-        out += "BEGIN:VEVENT\r\n";
-        out += &fold(&format!("UID:{}@plan-studio", esc(&s("id"))));
+        let uid = format!("{}@plan-studio", esc(&s("id")));
+        let mut out = String::from("BEGIN:VEVENT\r\n");
+        out += &fold(&format!("UID:{uid}"));
         out += &format!("DTSTAMP:{stamp}\r\nDTSTART:{d}T{from}\r\nDTEND:{d}T{to}\r\n");
         out += &fold(&format!("SUMMARY:{}", esc(&s("title"))));
         if !s("room").is_empty() { out += &fold(&format!("LOCATION:{}", esc(&s("room")))); }
         if !s("teacher").is_empty() { out += &fold(&format!("DESCRIPTION:{}", esc(&s("teacher")))); }
         out += "END:VEVENT\r\n";
+        list.push((uid, out));
     }
-    out + "END:VCALENDAR\r\n"
+    list
 }
 
 #[cfg(test)]

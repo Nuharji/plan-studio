@@ -180,7 +180,7 @@ function currentPeriod() {
 
 /* ================= Settings, history, saving ================= */
 const THEMES = ['dark', 'light', 'github', 'github-dark'];
-const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, dockTab: 'details', view: 'today', showDone: false, icsTasks: true, icsWeeks: 0};
+const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, dockTab: 'details', view: 'today', showDone: false, icsTasks: true, icsWeeks: 0, feedOn: false};
 let settings = {...DEF}, sel = null, booted = false, saveT = 0, dirty = false;
 const hist = {back: [], fwd: []};
 const effectiveLang = () => settings.lang === 'auto' ? ((navigator.language || 'en').toLowerCase().startsWith('de') ? 'de' : 'en') : settings.lang;
@@ -199,7 +199,75 @@ function persist() {
     try { if (invoke) await invoke('plan_save', {content: JSON.stringify(plan)}); else saveSettings(); dirty = false; }
     catch (e) { toast(t('toast.saveFail', {e})); }
     updateStatus();
+    pushCalendars();
   }, 400);
+}
+
+/* ================= The plan in your own calendar ================= */
+/* Two ways (Settings → In my calendar): a subscription on this computer (Rust: feed.rs — Apple Calendar, Outlook,
+   Thunderbird subscribe to webcal://127.0.0.1…) and the iCloud calendar "Plan Studio" (Rust: caldav.rs — also on
+   iPhone / iPad). Both get the dates, open homework (if chosen) and the timetable of the next weeks (if chosen), and
+   are brought up to date after every change. */
+let feedUrl = '', icloud = {connected: false, user: '', last_sync: 0}, icloudBusy = false, icloudT = 0, icloudErr = '';
+const calendarPayload = () => ({plan: {...plan, calendars: undefined, calCache: undefined,
+  lessonEvents: settings.icsWeeks > 0 ? lessonOccurrences(settings.icsWeeks) : []}, lang, tasks: !!settings.icsTasks});
+function pushCalendars(now = false) {
+  if (!invoke || !plan) return;
+  if (settings.feedOn && feedUrl) invoke('feed_update', calendarPayload()).catch(() => {});
+  if (!icloud.connected) return;
+  clearTimeout(icloudT);
+  icloudT = setTimeout(syncICloud, now ? 0 : 8000);   // changes come in bursts: wait until typing stops
+}
+async function syncICloud(manual = false) {
+  if (!icloud.connected || icloudBusy) return;
+  icloudBusy = true; refreshCalSettings();
+  try {
+    const r = await invoke('icloud_sync', calendarPayload());
+    icloudErr = ''; icloud.last_sync = Date.now();
+    if (manual) toast(t('mycal.synced', {n: r.uploaded, d: r.deleted}));
+  } catch (e) {
+    icloudErr = String(e) === 'signin' ? t('mycal.signinFail') : t('mycal.syncFail', {e: String(e)});
+    if (manual || String(e) === 'signin') toast(icloudErr);
+  }
+  icloudBusy = false; refreshCalSettings();
+}
+const refreshCalSettings = () => { if (settingsOpen && prefsSection === 'mycal') renderSettings(); };
+async function startFeed() {
+  try { feedUrl = await invoke('feed_start'); invoke('feed_update', calendarPayload()).catch(() => {}); }
+  catch (e) { feedUrl = ''; toast(t('mycal.feedFail', {e: String(e)})); }
+  refreshCalSettings();
+}
+async function calendarStart() {
+  if (!invoke) return;
+  if (settings.feedOn) await startFeed();
+  icloud = await invoke('icloud_status').catch(() => icloud);
+  if (icloud.connected) pushCalendars(true);
+  // The timetable in the calendar moves on with the days.
+  setInterval(() => pushCalendars(true), 6 * 3600 * 1000);
+}
+async function myCalClick(el) {
+  const k = el.dataset.mycal;
+  if (k === 'copy') { await invoke('clipboard_write', {text: feedUrl}).catch(() => {}); toast(t('mycal.copied')); }
+  else if (k === 'open') invoke('open_url', {url: feedUrl}).catch(e => toast(String(e)));
+  else if (k === 'appleid') invoke('open_url', {url: 'https://account.apple.com/account/manage'}).catch(() => {});
+  else if (k === 'sync') syncICloud(true);
+  else if (k === 'disconnect') {
+    if (!(await ask(t('mycal.disconnectAsk')))) return;
+    await invoke('icloud_disconnect').catch(() => {});
+    icloud = {connected: false, user: '', last_sync: 0}; icloudErr = ''; renderSettings();
+  } else if (k === 'connect') {
+    const user = ($('#icUser').value || '').trim(), pass = ($('#icPass').value || '').trim();
+    if (!user || !pass) return toast(t('mycal.needBoth'));
+    el.disabled = true; el.textContent = t('mycal.connecting');
+    try {
+      await invoke('icloud_connect', {user, pass});
+      icloud = await invoke('icloud_status'); icloudErr = '';
+      toast(t('mycal.connected')); renderSettings(); syncICloud(true);
+    } catch (e) {
+      icloudErr = String(e) === 'signin' ? t('mycal.signinFail') : t('mycal.connectFail', {e: String(e)});
+      renderSettings(); $('#icUser').value = user; toast(icloudErr);
+    }
+  }
 }
 function undo() { if (!hist.back.length) return; wtCache = {}; hist.fwd.push(JSON.stringify(plan)); plan = JSON.parse(hist.back.pop()); fixSel(); persist(); renderAll(); }
 function redo() { if (!hist.fwd.length) return; hist.back.push(JSON.stringify(plan)); plan = JSON.parse(hist.fwd.pop()); fixSel(); persist(); renderAll(); }
@@ -892,9 +960,24 @@ function renderSettings() {
   const body = {
     general: `<h3>${esc(t('set.language'))}</h3><p class="hint">${esc(t('set.languageHint'))}</p>
       <select class="wide-sel" data-sel="lang">${opt('auto', t('a.langAuto'), settings.lang)}${opt('en', 'English', settings.lang)}${opt('de', 'Deutsch', settings.lang)}</select>
-      <h3>${esc(t('set.layout'))}</h3>${sw('dock', t('set.panels'))}${sw('autoHide', t('set.autoHide'))}
-      <h3>${esc(t('ui.calendar'))}</h3>${sw('icsTasks', t('set.icsTasks'))}
-      <p class="hint">${esc(t('set.icsWeeksHint'))}</p><select class="wide-sel" data-sel="icsWeeks">${[0, 2, 4, 8, 12, 20].map(n => opt(n, n ? t('set.icsWeeksN', {n}) : t('set.icsWeeks0'), settings.icsWeeks || 0)).join('')}</select>`,
+      <h3>${esc(t('set.layout'))}</h3>${sw('dock', t('set.panels'))}${sw('autoHide', t('set.autoHide'))}`,
+    mycal: `<h3>${esc(t('mycal.what'))}</h3><p class="hint">${esc(t('mycal.whatHint'))}</p>${sw('icsTasks', t('set.icsTasks'))}
+      <p class="hint">${esc(t('set.icsWeeksHint'))}</p><select class="wide-sel" data-sel="icsWeeks">${[0, 2, 4, 8, 12, 20].map(n => opt(n, n ? t('set.icsWeeksN', {n}) : t('set.icsWeeks0'), settings.icsWeeks || 0)).join('')}</select>
+      <h3>${esc(t('mycal.icloud'))}</h3><p class="hint">${esc(t('mycal.icloudHint'))}</p>
+      ${!invoke ? `<p class="hint">${esc(t('mycal.appOnly'))}</p>` : icloud.connected
+        ? `<p>${esc(t('mycal.connectedAs', {user: icloud.user}))}<br><span class="meta">${esc(icloudBusy ? t('mycal.syncing') : icloud.last_sync ? t('mycal.lastSync', {when: new Date(icloud.last_sync).toLocaleString(effectiveLang() === 'de' ? 'de-DE' : 'en-GB', {dateStyle: 'short', timeStyle: 'short'})}) : '')}</span>
+          ${icloudErr ? `<br><span style="color:var(--danger)">${esc(icloudErr)}</span>` : ''}</p>
+          <p><button class="btn-sm primary" data-mycal="sync"${icloudBusy ? ' disabled' : ''}>${esc(t('mycal.syncNow'))}</button> <button class="btn-sm" data-mycal="disconnect">${esc(t('mycal.disconnect'))}</button></p>`
+        : `<div class="ed-field" style="max-width:420px"><label>${esc(t('mycal.appleId'))}</label><input class="field-in" id="icUser" type="email" autocomplete="username" placeholder="name@icloud.com"></div>
+          <div class="ed-field" style="max-width:420px"><label>${esc(t('mycal.appPass'))}</label><input class="field-in" id="icPass" type="password" autocomplete="off" placeholder="xxxx-xxxx-xxxx-xxxx"></div>
+          ${icloudErr ? `<p class="hint" style="color:var(--danger)">${esc(icloudErr)}</p>` : ''}
+          <p><button class="btn-sm primary" data-mycal="connect">${esc(t('mycal.connect'))}</button> <button class="btn-sm" data-mycal="appleid">${esc(t('mycal.makePass'))}</button></p>
+          <p class="hint">${esc(t('mycal.passHint'))}</p>`}
+      <h3>${esc(t('mycal.feed'))}</h3><p class="hint">${esc(t('mycal.feedHint'))}</p>
+      ${!invoke ? `<p class="hint">${esc(t('mycal.appOnly'))}</p>` : `${sw('feedOn', t('mycal.feedOn'))}
+      ${settings.feedOn && feedUrl ? `<div class="ed-field"><input class="field-in" readonly value="${esc(feedUrl)}" style="width:100%;max-width:560px"></div>
+        <p><button class="btn-sm primary" data-mycal="open">${esc(t('mycal.openApp'))}</button> <button class="btn-sm" data-mycal="copy">${esc(t('mycal.copy'))}</button></p>
+        <p class="hint">${esc(t('mycal.feedHow'))}</p>` : ''}`}`,
     appearance: `<h3>${esc(t('set.theme'))}</h3><div class="theme-grid">` + THEMES.map(th =>
       `<button class="theme-card${settings.theme === th ? ' active' : ''}" data-theme-pick="${th}">${mock(th)}
        <div class="theme-name">${esc(t('theme.' + th))}<span>${settings.theme === th ? '&#10003;' : ''}</span></div></button>`).join('') + '</div>',
@@ -954,7 +1037,7 @@ function renderSettings() {
     })(),
     keys: '<div id="keysBox"></div>'
   };
-  const sections = ['general', 'appearance', 'timetable', 'year', 'electives', 'calendars', 'keys'];
+  const sections = ['general', 'appearance', 'timetable', 'year', 'electives', 'calendars', 'mycal', 'keys'];
   $('#modalTitle').textContent = t('set.title');
   $('#modalBody').innerHTML = `<div class="prefs"><nav>${sections.map(k =>
     `<button data-sec="${k}" class="${k === prefsSection ? 'active' : ''}">${esc(t('set.' + k))}</button>`).join('')}</nav><section>${body[prefsSection]}</section></div>`;
@@ -983,6 +1066,8 @@ $('#modal').addEventListener('click', e => {
     if (!g) return toast(t('area.needGroup'));
     toast(t('area.imported', {n, area: g})); renderSettings(); return;
   }
+  const mc = e.target.closest('[data-mycal]');
+  if (mc) return myCalClick(mc);
   const cal = e.target.closest('[data-cal-add],[data-cal-del],[data-cal-color]');
   if (cal) return calendarClick(cal);
   const x = e.target.closest('[data-sec],[data-theme-pick],[data-pref],[data-period]'); if (!x) return;
@@ -1001,8 +1086,12 @@ $('#modal').addEventListener('click', e => {
 });
 $('#modal').addEventListener('change', e => {
   const d = e.target.dataset;
-  if (d.sel) { settings[d.sel] = d.sel === 'icsWeeks' ? +e.target.value : e.target.value; applySettings(); renderSettings(); }
-  if (d.sw) { settings[d.sw] = e.target.checked; applySettings(); }
+  if (d.sel) { settings[d.sel] = d.sel === 'icsWeeks' ? +e.target.value : e.target.value; applySettings(); renderSettings(); if (d.sel === 'icsWeeks') pushCalendars(true); }
+  if (d.sw) {
+    settings[d.sw] = e.target.checked; applySettings();
+    if (d.sw === 'feedOn') { if (settings.feedOn) startFeed(); else renderSettings(); }
+    if (d.sw === 'icsTasks') pushCalendars(true);
+  }
   if (d.calOn) { const c = calendars().find(x => x.id === d.calOn); change(() => { c.off = !e.target.checked; }); renderSettings(); return; }
   if (d.dayp != null) { const day = +d.dayp, n = +e.target.value; change(() => { plan.dayPeriods = Array.from({length: 7}, (_, i) => i === day ? n : (plan.dayPeriods || [])[i] || 0); }); return; }
   if (d.range) {
@@ -1173,6 +1262,7 @@ window.__pl = {get plan() { return plan; }, get sel() { return sel; }, A, run, n
   // The date changes at midnight; the current period every few minutes.
   setInterval(() => { if (!typing()) { renderView(); updateStatus(); } }, 60000);
   refreshCalendars();
+  calendarStart();
   setInterval(() => refreshCalendars(), 30 * 60000);
   if (invoke) {
     // A .plan file opened with the app ("Open with") is offered for import.

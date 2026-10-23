@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — 2026-10-23
+- New: the plan in your own calendar (Settings → In my calendar), kept up to date after every change:
+  - **iCloud calendar** — Plan Studio writes its entries into a calendar "Plan Studio" in your iCloud account, so they
+    show in Apple Calendar on the Mac, iPhone and iPad. Sign in with your Apple ID and an app-specific password (kept on
+    this computer only); only changed entries are uploaded, removed ones are deleted there too.
+  - **Subscription on this computer** — without an account: Apple Calendar, Outlook or Thunderbird subscribe to
+    webcal://127.0.0.1:…/plan.ics (with a secret in the address) and refresh by themselves while Plan Studio runs.
+- What goes in (dates always; homework and the timetable of the next weeks if you like) is chosen on the same page and
+  also applies to the calendar file.
+
 ## 0.4.2 — 2026-10-23
 - Fixed: elective slots could not be chosen anew each week — the same choice showed in every week. Slots of an elective
   area are now chosen per week by default; a choice for all weeks only counts when it is set as one ("Same every week"),
