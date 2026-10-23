@@ -228,7 +228,7 @@
   "tt.cancelled": "cancelled",
   "tt.holiday": "Holidays: {name}",
   "tt.weekType": "{name} week",
-  "tt.wtHint": "Click if this week is a different week type (the following weeks change with it).",
+  "tt.wtHint": "The week type of this week: from the pattern, or set by hand for this week only (the weeks after it stay as they are).",
   "tt.weekTypeOnly": "Only in",
   "tt.everyWeek": "Every week",
   "tt.ownTime": "Own time",
@@ -272,8 +272,8 @@
   "set.addHoliday": "+ Add holidays",
   "set.holidayN": "Holidays {n}",
   "set.weekTypes": "Alternating weeks",
-  "set.weekTypesHint": "For A/B weeks: name the week types, separated by commas. Lessons and offers can then apply in one of them only.",
-  "set.weekNames": "Week types",
+  "set.weekTypesHint": "For A/B weeks: the pattern the weeks follow, separated by commas — e.g. A, B or A, A, B. Lessons and offers can then apply in one week type only. Single weeks can be changed in the timetable.",
+  "set.weekNames": "Pattern",
   "set.thisWeekIs": "This week is",
   "set.skipHolidayWeeks": "Holiday weeks don't count (the rhythm continues after the holidays)",
   "tt.moreOptions": "More options",
@@ -314,5 +314,12 @@
   "mycal.copied": "Link copied.",
   "mycal.feedHow": "Apple Calendar opens the subscription dialog by itself. Outlook: Add calendar → From Internet → paste the link. Thunderbird: New Calendar → On the Network → paste the link.",
   "mycal.feedFail": "The subscription could not start: {e}",
-  "mycal.appOnly": "This works in the installed app."
+  "mycal.appOnly": "This works in the installed app.",
+  "area.optional": "Voluntary (choosing nothing is fine)",
+  "tt.optional": "voluntary",
+  "tt.wtAuto": "{name} week (pattern)",
+  "tt.wtOnly": "{name} week — only this week",
+  "set.patternPlace": "{name} (place {k} of the pattern)",
+  "set.overrides": "Weeks set by hand: {list}",
+  "set.clearOverrides": "Back to the pattern"
 }

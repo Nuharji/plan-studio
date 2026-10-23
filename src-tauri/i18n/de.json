@@ -228,7 +228,7 @@
   "tt.cancelled": "fällt aus",
   "tt.holiday": "Ferien / frei: {name}",
   "tt.weekType": "{name}-Woche",
-  "tt.wtHint": "Anklicken, wenn diese Woche ein anderer Wochentyp ist (die folgenden Wochen ändern sich mit).",
+  "tt.wtHint": "Der Wochentyp dieser Woche: aus dem Muster, oder von Hand nur für diese Woche (die Wochen danach bleiben, wie sie sind).",
   "tt.weekTypeOnly": "Nur in",
   "tt.everyWeek": "Jede Woche",
   "tt.ownTime": "Eigene Zeit",
@@ -272,8 +272,8 @@
   "set.addHoliday": "+ Ferien hinzufügen",
   "set.holidayN": "Ferien {n}",
   "set.weekTypes": "Wechselnde Wochen",
-  "set.weekTypesHint": "Für A/B-Wochen: Namen der Wochentypen mit Komma getrennt. Stunden und Angebote können dann nur in einem davon gelten.",
-  "set.weekNames": "Wochentypen",
+  "set.weekTypesHint": "Für A/B-Wochen: das Muster, dem die Wochen folgen, mit Komma getrennt — z. B. A, B oder A, A, B. Stunden und Angebote können dann nur in einem Wochentyp gelten. Einzelne Wochen änderst du im Stundenplan.",
+  "set.weekNames": "Muster",
   "set.thisWeekIs": "Diese Woche ist",
   "set.skipHolidayWeeks": "Ferienwochen zählen nicht mit (der Rhythmus geht nach den Ferien weiter)",
   "tt.moreOptions": "Weitere Optionen",
@@ -314,5 +314,12 @@
   "mycal.copied": "Link kopiert.",
   "mycal.feedHow": "Apple Kalender öffnet den Abo-Dialog von selbst. Outlook: Kalender hinzufügen → Aus dem Internet → Link einfügen. Thunderbird: Neuer Kalender → Im Netzwerk → Link einfügen.",
   "mycal.feedFail": "Das Abo konnte nicht starten: {e}",
-  "mycal.appOnly": "Das geht in der installierten App."
+  "mycal.appOnly": "Das geht in der installierten App.",
+  "area.optional": "Freiwillig (nichts wählen ist in Ordnung)",
+  "tt.optional": "freiwillig",
+  "tt.wtAuto": "{name}-Woche (Muster)",
+  "tt.wtOnly": "{name}-Woche — nur diese Woche",
+  "set.patternPlace": "{name} ({k}. Stelle im Muster)",
+  "set.overrides": "Von Hand geänderte Wochen: {list}",
+  "set.clearOverrides": "Zurück zum Muster"
 }

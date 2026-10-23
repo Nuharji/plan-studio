@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 — 2026-10-23
+- Voluntary elective areas: an area can be "voluntary (choosing nothing is fine)" — in the slot panel or under Settings →
+  Elective areas. Unchosen slots then stay quiet ("voluntary" instead of "choose …"), get no reminder in Today and are
+  not listed as lessons.
+- Your own week pattern: alternating weeks follow the pattern you type, e.g. A, B or A, A, B (Settings → School year;
+  "This week is" picks the place in the pattern). Single weeks can be set by hand in the timetable (the week type next to
+  the dates) without moving the weeks after them; "Back to the pattern" removes those changes.
+- Fixed: the "New choice every week / Same for all weeks" switch changed the look of the app's other segmented buttons.
+
 ## 0.5.0 — 2026-10-23
 - New: the plan in your own calendar (Settings → In my calendar), kept up to date after every change:
   - **iCloud calendar** — Plan Studio writes its entries into a calendar "Plan Studio" in your iCloud account, so they
