@@ -358,6 +358,9 @@ button.badge.wt:hover{background:var(--hover)}
 .block-grid button.on{background:color-mix(in srgb,var(--danger) 30%,var(--input-bg));border-color:var(--danger);color:var(--danger);font-size:11px;line-height:1}
 .block-grid button.on::after{content:"✕"}
 .room-changed{color:var(--warn);font-weight:700}
+.day-rooms{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px}
+.day-rooms label{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--dim)}
+.day-rooms .field-in{width:100%;box-sizing:border-box;height:26px}
 .area-seg{display:inline-flex;border:1px solid var(--input-border);border-radius:var(--radius);overflow:hidden;margin:0 0 8px}
 .area-seg button{border:0;background:none;padding:4px 10px;font:inherit;font-size:12px;color:var(--text);cursor:pointer}
 .area-seg button+button{border-left:1px solid var(--input-border)}

@@ -133,8 +133,10 @@ const timeOf = (l, p) => ({start: l.start || p.start, end: l.end || p.end});
 function roomFor(l, date, c = choiceOn(l, date)) {
   const day = date && (l.roomOn || {})[date];
   if (day) return {room: day, changed: true};
-  const s = c.subject || {};
-  return {room: (c.picked ? s.room || l.room : l.room || s.room) || '', changed: false};
+  const s = c.subject || {}, dr = (s.dayRooms || {})[l.day];
+  // An offer of an elective area brings its own room (per weekday if set); a normal slot's own room comes first.
+  const room = l.group ? dr || (c.picked ? s.room || l.room : l.room || s.room) : l.room || dr || s.room;
+  return {room: room || '', changed: false};
 }
 const roomHtml = r => r.room ? (r.changed ? `<b class="room-changed" title="${esc(t('tt.roomChanged'))}">${esc(r.room)}</b>` : esc(r.room)) : '';
 /* The period a lesson with its own times belongs to: the one it starts in (or, starting in a break, the next one);
@@ -382,7 +384,7 @@ const calRow = e => `<div class="row" title="${esc(e.cal.name)}${e.location ? ' 
 const SCALES = {g16: {min: 1, max: 6, best: 1}, p15: {min: 0, max: 15, best: 15}, pct: {min: 0, max: 100, best: 100}};
 const gradeCfg = () => {
   const c = plan.gradeCfg || {};
-  return {scale: SCALES[c.scale] ? c.scale : 'g16', plus: c.plus || 0.3,
+  return {scale: SCALES[c.scale] ? c.scale : 'g16', plus: c.plus != null ? +c.plus : 0.3,   // plus 0: no tendencies (+ / −)
     cats: c.cats && c.cats.length ? c.cats : [{id: 'w', name: t('grade.written'), weight: 50}, {id: 'o', name: t('grade.oral'), weight: 50}],
     subjectWeights: c.subjectWeights || {}};
 };
@@ -397,6 +399,7 @@ function gradeValue(str, cfg = gradeCfg()) {
     if (m && +m[2] === +m[1] + 1) return +m[1] + 0.5;
     m = s.match(/^([1-6])(\+{1,2}|-{1,2})?$/);
     if (m) {
+      if (m[2] && !cfg.plus) return null;   // tendencies are switched off
       const k = m[2] ? (m[2][0] === '+' ? -1 : 1) * m[2].length : 0;
       return clamp(+m[1] + k * cfg.plus, 0.7, 6);
     }
@@ -614,7 +617,7 @@ const VIEWS = {
     }
     return `<div class="view-title"><h1>${esc(t('view.grades'))}</h1><span class="sub">${esc(count ? t('grade.overall', {avg: fmtGrade(overall), n: count}) : t('grade.hint'))}</span></div>
       <div class="quick"><select id="qSubject">${subjectOptions('')}</select>
-        <input class="field-in" id="qGrade" style="width:90px" placeholder="${esc(t('grade.valuePh.' + cfg.scale))}">
+        <input class="field-in" id="qGrade" style="width:90px" placeholder="${esc(t('grade.valuePh.' + (cfg.scale === 'g16' && !cfg.plus ? 'g16plain' : cfg.scale)))}">
         <select id="qCat">${opts(cfg.cats.map(c => [c.id, c.name]), settings.gradeLastCat || '')}</select>
         <input class="field-in title-in" id="qTitle" placeholder="${esc(t('grade.titlePh'))}"><input type="date" id="qDate">
         <button class="btn-sm primary" id="qAdd">${esc(t('ui.add'))}</button></div>
@@ -731,7 +734,7 @@ function renderDetails() {
     const cfg = gradeCfg(), v = gradeValue(g.value);
     box.innerHTML = `<div class="sect">${esc(t('grade.one'))}</div>
       ${field('ui.subject', `<select data-f="subject">${subjectOptions(g.subject)}</select>`)}
-      ${field('grade.value', `<input class="field-in" data-f="value" value="${esc(g.value || '')}" placeholder="${esc(t('grade.valuePh.' + cfg.scale))}"><div class="meta">${esc(g.value && v == null ? t('grade.bad') : v != null ? t('grade.counts', {v: fmtGrade(v)}) : t('grade.empty'))}</div>`)}
+      ${field('grade.value', `<input class="field-in" data-f="value" value="${esc(g.value || '')}" placeholder="${esc(t('grade.valuePh.' + (cfg.scale === 'g16' && !cfg.plus ? 'g16plain' : cfg.scale)))}"><div class="meta">${esc(g.value && v == null ? t('grade.bad') : v != null ? t('grade.counts', {v: fmtGrade(v)}) : t('grade.empty'))}</div>`)}
       ${field('grade.cat', `<select data-f="cat">${cfg.cats.map(c => `<option value="${esc(c.id)}"${catOf(g).id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select>`)}
       ${field('grade.weight', `<select data-f="weight">${[0.5, 1, 2, 3].map(w => `<option value="${w}"${(+g.weight || 1) === w ? ' selected' : ''}>${esc(t('grade.times', {w: lang === 'de' ? String(w).replace('.', ',') : w}))}</option>`).join('')}</select>`)}
       ${field('ui.title', `<input class="field-in" data-f="title" value="${esc(g.title || '')}" placeholder="${esc(t('grade.titlePh'))}">`)}
@@ -746,6 +749,7 @@ function renderDetails() {
       ${field('ui.color', `<div class="colors">${COLORS.map(c => `<button data-color="${c}" class="${c === s.color ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div>`)}
       ${field('ui.teacher', `<input class="field-in" data-f="teacher" value="${esc(s.teacher || '')}">`)}
       ${field('ui.roomDefault', `<input class="field-in" data-f="room" value="${esc(s.room || '')}">`)}
+      ${field('tt.dayRooms', `<div class="day-rooms">${Array.from({length: plan.days}, (_, d) => `<label>${esc(dayName(d, 'short'))}<input class="field-in" data-sdayroom="${d}" value="${esc((s.dayRooms || {})[d] || '')}" placeholder="${esc(s.room || '')}"></label>`).join('')}</div><div class="meta">${esc(t('tt.dayRoomsHint'))}</div>`)}
       ${field('tt.group', `<input class="field-in" data-f="group" list="groupList" value="${esc(s.group || '')}" placeholder="${esc(t('tt.groupPh'))}">${groupList()}<div class="meta">${esc(t('tt.groupHint'))}</div>`)}
       ${field('grade.subjectWeights', `<div class="term-checks">${gradeCfg().cats.map(c => `<label>${esc(c.name)} <input class="field-in" style="width:56px" data-sweight="${esc(c.id)}" value="${esc((gradeCfg().subjectWeights[s.id] || {})[c.id] ?? '')}" placeholder="${esc(c.weight)}"> %</label>`).join('')}</div><div class="meta">${esc(t('grade.subjectWeightsHint'))}</div>`)}
       ${s.group ? (() => {
@@ -877,6 +881,11 @@ $('#details').addEventListener('change', e => {
     const l = lessonAt(sel.day, sel.period, addDays(shownMonday(), sel.day), false); if (!l || !l.group) return;
     const on = e.target.checked;
     change(() => { plan.areas = {...(plan.areas || {}), [l.group]: {...areaOf(l.group), optional: on}}; });
+    return;
+  }
+  if (e.target.dataset.sdayroom != null && sel && sel.kind === 'subject') {
+    const s = subj(sel.id), d = e.target.dataset.sdayroom, v = e.target.value.trim();
+    if (s) change(() => { s.dayRooms = {...(s.dayRooms || {})}; if (v) s.dayRooms[d] = v; else delete s.dayRooms[d]; });
     return;
   }
   if (e.target.dataset.sweight != null && sel && sel.kind === 'subject') {
@@ -1264,7 +1273,7 @@ function renderSettings() {
     grades: (() => {
       const cfg = gradeCfg(), sum = cfg.cats.reduce((n, c) => n + (+c.weight || 0), 0);
       return `<h3>${esc(t('grade.scale'))}</h3><select class="wide-sel" data-gcfg="scale">${['g16', 'p15', 'pct'].map(k => opt(k, t('grade.scale.' + k), cfg.scale)).join('')}</select>
-        ${cfg.scale === 'g16' ? `<h3>${esc(t('grade.plus'))}</h3><p class="hint">${esc(t('grade.plusHint'))}</p><select class="wide-sel" data-gcfg="plus">${[0.25, 0.3, 0.33, 0.5].map(v => opt(v, t('grade.plusOpt', {v: lang === 'de' ? String(v).replace('.', ',') : v}), cfg.plus)).join('')}</select>` : ''}
+        ${cfg.scale === 'g16' ? `<h3>${esc(t('grade.plus'))}</h3><p class="hint">${esc(t('grade.plusHint'))}</p><select class="wide-sel" data-gcfg="plus">${opt(0, t('grade.plusOff'), cfg.plus)}${[0.25, 0.3, 0.33, 0.5].map(v => opt(v, t('grade.plusOpt', {v: lang === 'de' ? String(v).replace('.', ',') : v}), cfg.plus)).join('')}</select>` : ''}
         <h3>${esc(t('grade.cats'))}</h3><p class="hint">${esc(t('grade.catsHint'))}</p>
         ${cfg.cats.map(c => `<div class="term-row"><input class="field-in" data-gcat="${esc(c.id)}|name" value="${esc(c.name)}"><input class="field-in" style="width:64px" data-gcat="${esc(c.id)}|weight" value="${esc(c.weight)}"><span>%</span>${cfg.cats.length > 1 ? `<button class="btn-sm danger-btn" data-gcat-del="${esc(c.id)}">${esc(t('cal.remove'))}</button>` : ''}</div>`).join('')}
         ${sum !== 100 ? `<p class="hint">${esc(t('grade.sumHint', {n: sum}))}</p>` : ''}

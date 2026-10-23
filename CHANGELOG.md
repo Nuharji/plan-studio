@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.4 — 2026-10-24
+- Grades: tendencies can be switched off (Settings → Grades → "No tendencies"); then only whole grades and decimals like
+  2.5 count, and "2−" is not taken as a grade.
+- Room per weekday: subjects and offers of elective areas can have a different room on each weekday (e.g. Monday 209,
+  Friday 106) — used wherever they take place that day, also when chosen anew each week. A room change for a single day
+  still comes first.
+
 ## 0.7.3 — 2026-10-24
 - Week types can follow the holidays instead of a pattern (Settings → School year → Alternating weeks): the school week
   right before and the one right after holidays get their own type (e.g. A), all other weeks another (B). Based on the

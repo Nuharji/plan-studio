@@ -377,5 +377,9 @@
   "set.hBefore": "Week before the holidays",
   "set.hAfter": "Week after the holidays",
   "set.hOther": "All other weeks",
-  "set.needHolidays": "Enter the holidays above first."
+  "set.needHolidays": "Enter the holidays above first.",
+  "grade.plusOff": "No tendencies (only whole grades)",
+  "grade.valuePh.g16plain": "e.g. 2",
+  "tt.dayRooms": "Room per weekday",
+  "tt.dayRoomsHint": "E.g. Monday 209, Friday 106. Empty = the room above. For offers of an elective area it applies in every slot of that day."
 }
