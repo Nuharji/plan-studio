@@ -147,8 +147,11 @@ function bestPeriod(l) {
   return i < 0 ? null : i;
 }
 /* Lessons with own times reaching into another period of the day (shown there too). */
-const spillsInto = (day, period, date) => plan.lessons.filter(l => l.day === day && l.period !== period && l.start && l.end && lessonOn(l, date)
-  && !blockedAt(day, l.period) && minutesOf(l.start) < minutesOf(plan.periods[period].end) && minutesOf(l.end) > minutesOf(plan.periods[period].start));
+const spillsInto = (day, period, date) => plan.lessons.filter(l => {
+  if (l.day !== day || l.period === period || !(l.start || l.end) || !lessonOn(l, date) || blockedAt(day, l.period) || !plan.periods[l.period]) return false;
+  const tm = timeOf(l, plan.periods[l.period]), p = plan.periods[period];   // an own end only: from the start of its period
+  return minutesOf(tm.start) < minutesOf(p.end) && minutesOf(tm.end) > minutesOf(p.start);
+});
 /* Elective areas: subjects in the same area form a catalog; a timetable slot of that area is chosen from it — once,
    or anew every week when the area says so (then the choice is stored per date in `picks`; "-" = not taking part). */
 const groups = () => [...new Set(plan.subjects.map(s => (s.group || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -528,9 +531,46 @@ const VIEWS = {
         ${ruleWarnings(ws).map(x => `<span class="badge red">${esc(x)}</span>`).join('')}</div>
       <table class="tt"><tr><th></th>${dates.map((x, i) => `<th class="${x === d ? 'today' : ''}">${esc(dayName(i))}<span class="dt">${esc(holidayOn(x) ? holidayOn(x).name : fmtDate(x, {day: 'numeric', month: 'numeric'}))}</span></th>`).join('')}</tr>`;
     const placed = new Set();
+    // Rows: the periods, and between two periods a gap as high as the break is long (5 minutes thin, lunch wider).
+    const rows = [];
     plan.periods.forEach((p, i) => {
+      rows.push({i, p});
+      const next = plan.periods[i + 1], gap = next ? minutesOf(next.start) - minutesOf(p.end) : 0;
+      if (gap > 0) rows.push({gap});
+    });
+    const rowOf = i => rows.findIndex(r => r.i === i);
+    // A course with its own times stretches over the further periods it reaches into, when they are free that day.
+    const covered = new Set(), spans = {};
+    dates.forEach((date, day) => {
+      if (holidayOn(date)) return;
+      plan.periods.forEach((p, i) => {
+        if (blockedAt(day, i) || covered.has(`${day}|${rowOf(i)}`)) return;
+        const live = lessonsAt(day, i, date, false).filter(l => !(l.skip || []).includes(date));
+        if (live.length !== 1 || !(live[0].start || live[0].end)) return;
+        const end = minutesOf(timeOf(live[0], p).end);
+        let last = i;
+        for (let k = i + 1; k < plan.periods.length && minutesOf(plan.periods[k].start) < end; k++) {
+          const q = plan.periods[k];
+          if (blockedAt(day, k) || lessonsAt(day, k, date, false).length || classesOn(date).some(e => overlaps(e, q))) { last = i; break; }
+          last = k;
+        }
+        if (last > i) {
+          const r0 = rowOf(i), r1 = rowOf(last);
+          spans[`${day}|${i}`] = r1 - r0 + 1;
+          for (let r = r0 + 1; r <= r1; r++) covered.add(`${day}|${r}`);
+        }
+      });
+    });
+    rows.forEach((row, r) => {
+      if (row.gap != null) {
+        h += `<tr class="brk" style="height:${Math.round(clamp(row.gap * 0.35, 2, 40))}px"><td></td>${dates.map((_, day) => covered.has(`${day}|${r}`) ? '' : '<td></td>').join('')}</tr>`;
+        return;
+      }
+      const {i, p} = row;
       h += `<tr><td class="p"><b>${i + 1}.</b>${esc(p.start)}–${esc(p.end)}</td>`;
       dates.forEach((date, day) => {
+        if (covered.has(`${day}|${r}`)) return;
+        const span = spans[`${day}|${i}`] ? ` rowspan="${spans[`${day}|${i}`]}"` : '';
         if (blockedAt(day, i)) { h += '<td class="c off"></td>'; return; }
         const hol = holidayOn(date), ls = hol ? [] : lessonsAt(day, i, date, false), cls = classesOn(date).filter(e => overlaps(e, p));
         cls.forEach(e => placed.add(e.id));
@@ -539,21 +579,18 @@ const VIEWS = {
         const open = live.length && live.every(l => l.group && !optionalArea(l.group) && !choiceOn(l, date).subject && !choiceOn(l, date).off);
         const isSel = sel && sel.kind === 'cell' && sel.day === day && sel.period === i;
         const style = s ? ` style="background:${s.color}22;border-color:${s.color}88;color:var(--strong)"` : '';
-        h += `<td class="c${s ? ' full' : ''}${open ? ' slot' : ''}${hol ? ' hol' : ''}${isSel ? ' sel' : ''}${date === d && i === now ? ' now' : ''}" data-day="${day}" data-period="${i}"${style}>
+        h += `<td class="c${s ? ' full' : ''}${open ? ' slot' : ''}${hol ? ' hol' : ''}${isSel ? ' sel' : ''}${date === d && i === now ? ' now' : ''}${span ? ' span' : ''}" data-day="${day}" data-period="${i}"${span}${style}>
           ${ls.map(l => { const c = choiceOn(l, date), ss = c.subject, gone = (l.skip || []).includes(date);
             const time = l.start || l.end ? `<span class="r">${esc(timeOf(l, p).start)}–${esc(timeOf(l, p).end)}</span>` : '';
             if (gone) return `<span class="n cancel">${esc(ss ? ss.name : l.group || '')}</span><span class="r">${esc(t('tt.cancelled'))}</span>`;
             if (c.off) return `<span class="n">${esc(l.group)}</span><span class="r">${esc(t('tt.off'))}</span>`;
             return ss ? `<span class="n" style="color:${ss.color}">${esc(ss.name)}</span><span class="r">${roomHtml(roomFor(l, date, c))}</span>${time}`
               : l.group ? `<span class="n${optionalArea(l.group) ? ' opt' : ''}">${esc(l.group)}</span><span class="r">${esc(t(optionalArea(l.group) ? 'tt.optional' : 'tt.choose'))}</span>${time}` : ''; }).join('')}
-          ${hol ? '' : spillsInto(day, i, date).map(l => { const ss = choiceOn(l, date).subject;
-            return `<span class="cont" data-home="${day}|${l.period}" title="${esc(`${l.start}–${l.end}`)}">↳ ${esc(ss ? ss.name : l.group || '')} <small>${esc(l.start)}–${esc(l.end)}</small></span>`; }).join('')}
+          ${hol ? '' : spillsInto(day, i, date).map(l => { const ss = choiceOn(l, date).subject, tm = timeOf(l, plan.periods[l.period]);
+            return `<span class="cont" data-home="${day}|${l.period}" title="${esc(`${tm.start}–${tm.end}`)}">↳ ${esc(ss ? ss.name : l.group || '')} <small>${esc(tm.start)}–${esc(tm.end)}</small></span>`; }).join('')}
           ${cls.map(e => `<span class="ev" data-event="${e.id}" title="${esc(`${e.time}–${classEnd(e)} ${e.title || (subj(e.subject) || {}).name || ''}`)}">${esc(e.time)} ${esc(e.title || (subj(e.subject) || {}).name || t('type.class'))}${e.room ? ' · ' + esc(e.room) : ''}</span>`).join('')}</td>`;
       });
       h += '</tr>';
-      // A longer pause before the next period shows as a gap.
-      const next = plan.periods[i + 1];
-      if (next && minutesOf(next.start) - minutesOf(p.end) >= 15) h += `<tr class="brk"><td colspan="${plan.days + 1}"></td></tr>`;
     });
     h += '</table>';
     // Class sessions that fit no period (no time, after the last period, on a free day) are listed below.

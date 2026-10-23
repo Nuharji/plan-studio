@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.5 — 2026-10-24
+- A course with its own times stretches over every period it reaches into (e.g. until 16:15 over two periods) as one
+  block, when those periods are free that day; otherwise they show "↳ name".
+- Fixed: a course with only its own end time (starting with its period) didn't show in the following periods.
+- The gaps between periods in the timetable follow the length of the break (5 minutes thin, lunch wider, an evening gap
+  wide).
+
 ## 0.7.4 — 2026-10-24
 - Grades: tendencies can be switched off (Settings → Grades → "No tendencies"); then only whole grades and decimals like
   2.5 count, and "2−" is not taken as a grade.
