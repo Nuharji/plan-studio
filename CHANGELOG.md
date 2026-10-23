@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 — 2026-10-23
+- Fixed: elective slots could not be chosen anew each week — the same choice showed in every week. Slots of an elective
+  area are now chosen per week by default; a choice for all weeks only counts when it is set as one ("Same every week"),
+  so an older choice no longer fills every week. Each slot has a switch "New choice every week / Same for all weeks"
+  right in the panel (for areas chosen once, e.g. per quarter).
+
 ## 0.4.1 — 2026-10-16
 - The calendar export can contain the timetable of the next 2–20 weeks (Settings → General → Calendar): every lesson with
   its time, room and teacher — holidays, alternating weeks, cancelled days and your elective choices included — so the

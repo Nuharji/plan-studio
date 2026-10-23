@@ -245,7 +245,7 @@
   "area.everyWeek": "Same every week",
   "area.clear": "Undo choice",
   "area.pickedHint": "Chosen for this date only. \"Same every week\" keeps it for all weeks (for offers with regular attendance).",
-  "area.fixedHint": "The fixed choice applies; pick something else to change it for this date only.",
+  "area.fixedHint": "Chosen for all weeks (\"Same every week\"); pick something else to change it for this date only.",
   "area.weeklyHint": "This area is chosen anew every week: pick an offer for this date.",
   "area.category": "Category",
   "area.categoryPh": "e.g. Languages, Sports, Arts",
@@ -279,5 +279,8 @@
   "tt.moreOptions": "More options",
   "set.icsWeeksHint": "The calendar export can also contain your timetable (with holidays, alternating weeks and your choices):",
   "set.icsWeeks0": "Without timetable",
-  "set.icsWeeksN": "Timetable of the next {n} weeks"
+  "set.icsWeeksN": "Timetable of the next {n} weeks",
+  "area.modeWeekly": "New choice every week",
+  "area.modeFixed": "Same for all weeks",
+  "area.modeHint": "Applies to the whole elective area"
 }

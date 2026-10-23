@@ -103,14 +103,17 @@ const timeOf = (l, p) => ({start: l.start || p.start, end: l.end || p.end});
    or anew every week when the area says so (then the choice is stored per date in `picks`; "-" = not taking part). */
 const groups = () => [...new Set(plan.subjects.map(s => (s.group || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 const areaOf = name => (plan.areas || {})[name] || {};
-const weeklyArea = name => !!name && !!areaOf(name).weekly;
+// Elective slots are chosen anew every week unless their area is set to one choice for all weeks (e.g. per quarter).
+const weeklyArea = name => !!name && areaOf(name).weekly !== false;
 const OFF = '-';
 function choiceOn(l, date) {
   const p = date && l.picks && l.picks[date];
   if (p === OFF) return {off: true, subject: null, picked: true};
   if (p && subj(p)) return {subject: subj(p), picked: true};
-  // A fixed choice only counts in weeks its offer is given (e.g. an offer of the B weeks only).
+  // In a weekly area a choice for all weeks counts only when it was set as one ("Same every week"); a fixed choice
+  // also only counts in weeks its offer is given (e.g. an offer of the B weeks only).
   const s = subj(l.subject);
+  if (s && weeklyArea(l.group) && !l.everyWeek) return {subject: null, picked: false};
   return {subject: s && !(l.group && s.weekType && cycle() && date && s.weekType !== weekTypeOf(date)) ? s : null, picked: false};
 }
 /* The offers of an area for one slot: matching the week type and offered in that slot (or everywhere). */
@@ -443,7 +446,7 @@ function renderDetails() {
       return `<div class="lesson-box${x_on ? ' active' : ''}">
         <div class="lb-h">${ss ? chip(ss) : x.group ? openSlot(x.group) : `<span class="meta">${esc(t('tt.empty'))}</span>`}
           ${x_on ? `<span class="badge ok">${esc(t('tt.thisWeekOn'))}</span>` : ''}<span class="flex"></span><button class="btn-sm danger-btn" data-ldel="${x.id}">${esc(t('a.delete'))}</button></div>
-        ${field(x.group && weeklyArea(x.group) ? 'tt.fixedChoice' : 'ui.subject', `<select data-l="subject" data-lid="${x.id}">${subjectOptions(x.subject)}</select>`)}
+        ${field(x.group && weeklyArea(x.group) ? 'tt.fixedChoice' : 'ui.subject', `<select data-l="subject" data-lid="${x.id}">${subjectOptions(weeklyArea(x.group) && !x.everyWeek ? '' : x.subject)}</select>`)}
         ${field('ui.room', `<input class="field-in" data-l="room" data-lid="${x.id}" value="${esc(x.room || '')}" placeholder="${esc((ss || {}).room || '')}">`)}
         <details class="more"${x.group || !x.subject || (x.terms || []).length || x.weekType || x.start || x.end || (x.skip || []).includes(date) ? ' open' : ''}><summary>${esc(t('tt.moreOptions'))}</summary>
         ${field('tt.group', `<input class="field-in" data-l="group" data-lid="${x.id}" list="groupList" value="${esc(x.group || '')}" placeholder="${esc(t('tt.groupPh'))}">`)}
@@ -456,11 +459,12 @@ function renderDetails() {
     box.innerHTML = `<div class="sect">${esc(dayName(sel.day))}, ${esc(fmtDate(date, {day: 'numeric', month: 'short'}))} · ${sel.period + 1}. ${esc(periodName())} (${esc(p.start)}–${esc(p.end)})${cycle() ? ' · ' + esc(t('tt.weekType', {name: weekTypeOf(date)})) : ''}</div>
       ${hol ? `<p class="hint warn-row">${esc(t('tt.holiday', {name: hol.name}))}</p>` : ''}
       ${l && l.group ? `<div class="sect">${esc(t(weekly ? 'area.chooseFor' : 'ui.catalog', {name: l.group, date: fmtDate(date)}))}</div>
+        <div class="seg" title="${esc(t('area.modeHint'))}"><button data-area-mode="1" class="${weekly ? 'on' : ''}">${esc(t('area.modeWeekly'))}</button><button data-area-mode="0" class="${weekly ? '' : 'on'}">${esc(t('area.modeFixed'))}</button></div>
         ${offers.length ? catalog : `<p class="hint" style="color:var(--dim)">${esc(t('area.noOffers'))}</p>`}
         ${weekly ? `<p class="pick-btns"><button class="btn-sm${c.off ? ' on' : ''}" data-pick-off>${esc(t('area.off'))}</button>
           ${c.picked && c.subject ? `<button class="btn-sm" data-pick-fixed>${esc(t('area.everyWeek'))}</button>` : ''}
           ${c.picked ? `<button class="btn-sm" data-pick-clear>${esc(t('area.clear'))}</button>` : ''}</p>
-          <p class="hint" style="color:var(--dim)">${esc(t(c.picked ? 'area.pickedHint' : l.subject ? 'area.fixedHint' : 'area.weeklyHint'))}</p>` : ''}
+          <p class="hint" style="color:var(--dim)">${esc(t(c.picked ? 'area.pickedHint' : l.subject && l.everyWeek ? 'area.fixedHint' : 'area.weeklyHint'))}</p>` : ''}
         <details class="more"><summary>${esc(t('tt.allSubjects'))}</summary>${pal(plan.subjects.filter(s => !offers.includes(s)))}</details>`
       : pal(plan.subjects)}
       ${all.length ? '' : `<p class="hint" style="color:var(--dim)">${esc(t('ui.cellHint'))}</p>`}
@@ -592,7 +596,7 @@ $('#details').addEventListener('change', e => {
   const f = e.target.dataset.f;
   if (e.target.dataset.l) {
     const l = plan.lessons.find(x => x.id === e.target.dataset.lid), k = e.target.dataset.l;
-    if (l) change(() => { l[k] = e.target.value.trim(); });
+    if (l) change(() => { l[k] = e.target.value.trim(); if (k === 'subject') l.everyWeek = !!l.subject; });
     return;
   }
   if (e.target.dataset.lskip) {
@@ -631,11 +635,17 @@ $('#details').addEventListener('click', e => {
     });
     return;
   }
+  const mode = e.target.closest('[data-area-mode]');
+  if (mode) {
+    const l = lessonAt(sel.day, sel.period, addDays(shownMonday(), sel.day), false); if (!l || !l.group) return;
+    change(() => { plan.areas = {...(plan.areas || {}), [l.group]: {...areaOf(l.group), weekly: mode.dataset.areaMode === '1'}}; });
+    return;
+  }
   if (e.target.closest('[data-pick-off],[data-pick-fixed],[data-pick-clear]')) {
     const date = addDays(shownMonday(), sel.day), l = lessonAt(sel.day, sel.period, date, false); if (!l) return;
     if (e.target.closest('[data-pick-off]')) setPick(l, date, choiceOn(l, date).off ? null : OFF);
     else if (e.target.closest('[data-pick-clear]')) setPick(l, date, null);
-    else { const id = (choiceOn(l, date).subject || {}).id; change(() => { l.subject = id; if (l.picks) delete l.picks[date]; }); }
+    else { const id = (choiceOn(l, date).subject || {}).id; change(() => { l.subject = id; l.everyWeek = true; if (l.picks) delete l.picks[date]; }); }
     return;
   }
   const ld = e.target.closest('[data-ldel]');
@@ -912,7 +922,7 @@ function renderSettings() {
       const gs = groups();
       const areaBox = g => { const a = areaOf(g), cats = categoriesOf(g);
         return `<div class="lesson-box"><div class="lb-h">${openSlot(g)}<span class="meta">${esc(t('area.count', {n: plan.subjects.filter(s => (s.group || '').trim() === g).length}))}</span></div>
-          <label class="switch"><input type="checkbox" data-area="${esc(g)}|weekly"${a.weekly ? ' checked' : ''}><span></span>${esc(t('area.weekly'))}</label>
+          <label class="switch"><input type="checkbox" data-area="${esc(g)}|weekly"${weeklyArea(g) ? ' checked' : ''}><span></span>${esc(t('area.weekly'))}</label>
           <div class="daylen"><label>${esc(t('area.deadline'))}</label><input type="time" data-area="${esc(g)}|deadline" value="${esc(a.deadline || '')}">
           <label>${esc(t('area.rule'))}</label><div class="rule"><input type="number" min="0" max="20" data-area="${esc(g)}|min" value="${esc(a.min || '')}" placeholder="0">
             <span>× ${esc(t('area.from'))}</span><input class="field-in" data-area="${esc(g)}|category" list="cat-${esc(g)}" value="${esc(a.category || '')}" placeholder="${esc(t('area.categoryPh'))}"><datalist id="cat-${esc(g)}">${cats.map(k => `<option value="${esc(k)}">`).join('')}</datalist>

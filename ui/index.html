@@ -332,6 +332,10 @@ input[type=date],input[type=time]{color-scheme:light dark}
 button.badge.wt{border:1px solid var(--accent);color:var(--accent);background:transparent;cursor:pointer;font:inherit;font-size:11px;font-weight:600}
 button.badge.wt:hover{background:var(--hover)}
 .sub-sect{margin:8px 0 5px;font-size:11px;color:var(--dim);font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--input-border);border-radius:var(--radius);overflow:hidden;margin:0 0 8px}
+.seg button{border:0;background:none;padding:4px 10px;font:inherit;font-size:12px;color:var(--text);cursor:pointer}
+.seg button+button{border-left:1px solid var(--input-border)}
+.seg button.on{background:var(--accent);color:var(--on-accent,#fff)}
 .pick-btns{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
 .btn-sm.on{border-color:var(--accent);color:var(--accent)}
 details.more{margin:10px 0}

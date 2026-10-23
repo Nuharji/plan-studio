@@ -245,7 +245,7 @@
   "area.everyWeek": "Jede Woche so",
   "area.clear": "Wahl zurücksetzen",
   "area.pickedHint": "Nur für diesen Tag gewählt. „Jede Woche so“ behält es für alle Wochen (für Angebote mit regelmäßiger Teilnahme).",
-  "area.fixedHint": "Die feste Wahl gilt; wähle etwas anderes, um nur diesen Tag zu ändern.",
+  "area.fixedHint": "Für alle Wochen gewählt („Jede Woche so“); wähle etwas anderes, um nur diesen Tag zu ändern.",
   "area.weeklyHint": "Dieser Bereich wird jede Woche neu gewählt: wähle ein Angebot für diesen Tag.",
   "area.category": "Kategorie",
   "area.categoryPh": "z. B. Sprachen, Sport, Kunst",
@@ -279,5 +279,8 @@
   "tt.moreOptions": "Weitere Optionen",
   "set.icsWeeksHint": "Der Kalender-Export kann auch deinen Stundenplan enthalten (mit Ferien, wechselnden Wochen und deinen Wahlen):",
   "set.icsWeeks0": "Ohne Stundenplan",
-  "set.icsWeeksN": "Stundenplan der nächsten {n} Wochen"
+  "set.icsWeeksN": "Stundenplan der nächsten {n} Wochen",
+  "area.modeWeekly": "Jede Woche neu",
+  "area.modeFixed": "Fest für alle Wochen",
+  "area.modeHint": "Gilt für den ganzen Wahlbereich"
 }
