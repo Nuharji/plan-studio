@@ -265,7 +265,12 @@ function persist() {
    are brought up to date after every change. */
 let feedUrl = '', icloud = {connected: false, user: '', last_sync: 0}, icloudBusy = false, icloudT = 0, icloudErr = '';
 const calendarPayload = () => ({plan: {...plan, calendars: undefined, calCache: undefined,
-  lessonEvents: settings.icsWeeks > 0 ? lessonOccurrences(settings.icsWeeks) : []}, lang, tasks: !!settings.icsTasks});
+  lessonEvents: [...(settings.icsWeeks > 0 ? lessonOccurrences(settings.icsWeeks) : []), ...studyEvents()]}, lang, tasks: !!settings.icsTasks});
+/* Study sessions as calendar entries (when chosen in Settings → Study). */
+const studyEvents = () => !studyCfg().inCalendar ? [] : sessions().filter(x => !x.done && x.date >= today()).map(x => {
+  const st = sessionStart(x), m = minutesOf(st) + x.minutes;
+  return {id: `study-${x.id}`, date: x.date, start: st, end: `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`, title: t('study.calTitle', {what: sessionTitle(x)}), room: '', teacher: ''};
+});
 function pushCalendars(now = false) {
   if (!invoke || !plan) return;
   if (settings.feedOn && feedUrl) invoke('feed_update', calendarPayload()).catch(() => {});
@@ -385,6 +390,121 @@ const calRow = e => `<div class="row" title="${esc(e.cal.name)}${e.location ? ' 
    each grade can count more or less; averages are worked out per category, then weighted. An empty grade (e.g. an exam
    not back yet) is kept but not counted. */
 const SCALES = {g16: {min: 1, max: 6, best: 1}, p15: {min: 0, max: 15, best: 15}, pct: {min: 0, max: 100, best: 100}};
+/* ================= Study planner ================= */
+/* Exams, tests and presentations get topics to tick off and a study plan: the study time is spread over the days before
+   (at most so many minutes a day, other exams included), each session after school. Sessions show in Today and the next
+   7 days, can go into your calendar, and a study timer counts the minutes learned per subject. */
+const STUDY_TYPES = ['exam', 'test', 'talk'];
+const studyCfg = () => ({perDay: 60, chunk: 30, from: '16:00', work: 25, rest: 5, inCalendar: false,
+  lead: {exam: 10, test: 5, talk: 7}, total: {exam: 300, test: 120, talk: 180}, ...(plan.studyCfg || {})});
+const sessions = () => plan.study || [];
+const studyLog = () => plan.studyLog || [];
+const eventOf = id => plan.events.find(e => e.id === id);
+/* When a session on a day starts: not before the study time, and not before the last lesson of the day ends (+30 min). */
+function studyTime(date) {
+  const w = weekday(date), cfg = studyCfg();
+  let m = minutesOf(cfg.from);
+  if (w < plan.days && !holidayOn(date)) plan.periods.forEach((p, i) => { if (lessonsAt(w, i, date).length) m = Math.max(m, minutesOf(p.end) + 30); });
+  classesOn(date).forEach(e => { if (e.time) m = Math.max(m, minutesOf(classEnd(e)) + 30); });
+  m = Math.ceil(m / 5) * 5;
+  return `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
+}
+/* When a session starts: the day's study time, after the sessions before it that day. */
+function sessionStart(x) {
+  const before = sessions().filter(y => y.date === x.date).sort((a, b) => (eventOf(a.event) || {}).date?.localeCompare((eventOf(b.event) || {}).date || '') || 0);
+  let m = minutesOf(studyTime(x.date));
+  for (const y of before) { if (y === x) break; m += y.minutes; }
+  return `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
+}
+/* The study plan of one event: done sessions stay, the rest is spread anew over the days before it. */
+function planStudy(ev) {
+  const cfg = studyCfg(), total = +ev.prepMinutes || cfg.total[ev.type] || 120;
+  const last = addDays(ev.date, -1), first = [today(), addDays(ev.date, -(cfg.lead[ev.type] || 7))].sort()[1];
+  const keep = sessions().filter(x => x.event !== ev.id || x.done);
+  let left = Math.max(0, total - keep.filter(x => x.event === ev.id).reduce((n, x) => n + x.minutes, 0));
+  const days = [];
+  for (let d = first; d <= last; d = addDays(d, 1)) days.push(d);
+  if (!days.length || !left) return {list: keep, made: 0};
+  const used = d => keep.filter(x => x.date === d && !x.done).reduce((n, x) => n + x.minutes, 0);
+  const chunks = [];
+  while (left > 0) { const c = Math.min(cfg.chunk, left); chunks.push(c); left -= c; }
+  const topics = (ev.topics || []).filter(x => !x.done).map(x => x.text);
+  const made = [];
+  chunks.forEach((c, k) => {
+    // Evenly over the days, the last chunks nearest to the exam; a full day hands the chunk on to the next one with room.
+    let i = Math.min(days.length - 1, Math.floor((k + 0.5) * days.length / chunks.length));
+    const room = d => cfg.perDay - used(d) - made.filter(x => x.date === d).reduce((n, x) => n + x.minutes, 0);
+    let tries = 0;
+    while (room(days[i]) < c && tries++ < days.length) i = (i + 1) % days.length;
+    const topic = k === chunks.length - 1 && chunks.length > 2 ? t('study.review') : topics.length ? topics[k % topics.length] : '';
+    made.push({id: uid(), event: ev.id, subject: ev.subject || '', date: days[i], minutes: c, topic, done: false, learned: 0});
+  });
+  return {list: [...keep, ...made].sort((a, b) => a.date.localeCompare(b.date)), made: made.length};
+}
+const topicProgress = ev => { const l = ev.topics || []; return l.length ? Math.round(l.filter(x => x.done).length / l.length * 100) : null; };
+const sessionTitle = x => { const ev = eventOf(x.event), s = subj(x.subject);
+  return [s ? s.name : '', x.topic || (ev ? ev.title || t('type.' + ev.type) : '')].filter(Boolean).join(' – '); };
+function studyRow(x) {
+  const ev = eventOf(x.event), s = subj(x.subject);
+  return `<div class="row two-line${x.done ? ' done' : ''}" data-session="${x.id}">
+    <div class="tl-main"><input type="checkbox" data-sdone="${x.id}"${x.done ? ' checked' : ''} title="${esc(t('ui.markDone'))}"><span class="grow tl-title">${esc(x.topic || t('study.prepare'))}</span>
+      <span class="badge">${esc(t('study.min', {n: x.minutes}))}</span>${x.done ? '' : `<button class="btn-sm" data-timer="${x.id}" title="${esc(t('study.start'))}">▶</button>`}</div>
+    <div class="tl-sub tl-indent"><b class="tl-time">${esc(sessionStart(x))}</b><span class="tl-sep">·</span>${subjDot(s)}${ev ? `<span class="tl-sep">·</span><span>${esc(t('study.for', {what: ev.title || t('type.' + ev.type), when: relDay(ev.date)}))}</span>` : ''}</div></div>`;
+}
+/* Minutes learned per subject from a day on (the timer writes the log). */
+function learnedSince(from) {
+  const m = {};
+  for (const l of studyLog().filter(l => l.date >= from)) m[l.subject || ''] = (m[l.subject || ''] || 0) + l.minutes;
+  return m;
+}
+
+/* ----- Study timer: work / break phases; finished work phases count for the session and the subject ----- */
+let timer = null;
+function startTimer(sessionId) {
+  const x = sessions().find(y => y.id === sessionId); if (!x) return;
+  const cfg = studyCfg();
+  timer = {id: x.id, phase: 'work', left: cfg.work * 60, running: true, last: Date.now()};
+  drawTimer();
+}
+function stopTimer(save = true) {
+  if (timer && save && timer.phase === 'work') logStudy(timer.id, Math.floor((studyCfg().work * 60 - timer.left) / 60));
+  timer = null; drawTimer();
+}
+function logStudy(id, minutes) {
+  const x = sessions().find(y => y.id === id);
+  if (!x || minutes < 1) return;
+  change(() => {
+    plan.studyLog = [...studyLog(), {date: today(), subject: x.subject, event: x.event, minutes}].filter(l => l.date >= addDays(today(), -400));
+    x.learned = (x.learned || 0) + minutes;
+    if (x.learned >= x.minutes) x.done = true;
+  });
+}
+function beep() { try { const a = new AudioContext(), o = a.createOscillator(), g = a.createGain(); o.frequency.value = 880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.15, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.6); o.start(); o.stop(a.currentTime + 0.6); } catch (e) {} }
+setInterval(() => {
+  if (!timer || !timer.running) return;
+  const now = Date.now(); timer.left -= (now - timer.last) / 1000; timer.last = now;
+  if (timer.left <= 0) {
+    const cfg = studyCfg(); beep();
+    if (timer.phase === 'work') { logStudy(timer.id, cfg.work); const x = sessions().find(y => y.id === timer.id);
+      if (!x || x.done) { toast(t('study.sessionDone')); timer = null; drawTimer(); return; }
+      timer.phase = 'rest'; timer.left = cfg.rest * 60; toast(t('study.restNow')); }
+    else { timer.phase = 'work'; timer.left = cfg.work * 60; toast(t('study.workNow')); }
+  }
+  drawTimer();
+}, 500);
+function drawTimer() {
+  let el = $('#studyTimer');
+  if (!timer) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'studyTimer'; el.className = 'study-timer'; document.body.append(el);
+    el.addEventListener('click', e => { const b = e.target.closest('[data-tm]'); if (!b || !timer) return;
+      if (b.dataset.tm === 'pause') { timer.running = !timer.running; timer.last = Date.now(); drawTimer(); } else stopTimer(); }); }
+  const x = sessions().find(y => y.id === timer.id), sec = Math.max(0, Math.ceil(timer.left));
+  el.className = 'study-timer ' + timer.phase;
+  el.innerHTML = `<div class="st-phase">${esc(t(timer.phase === 'work' ? 'study.work' : 'study.rest'))}</div><div class="st-time">${pad(Math.floor(sec / 60))}:${pad(sec % 60)}</div>
+    <div class="st-what">${esc(x ? sessionTitle(x) : '')}</div>
+    <div class="st-btns"><button class="btn-sm" data-tm="pause">${esc(t(timer.running ? 'study.pause' : 'study.resume'))}</button><button class="btn-sm" data-tm="stop">${esc(t('study.stop'))}</button></div>`;
+}
+
 const gradeCfg = () => {
   const c = plan.gradeCfg || {};
   return {scale: SCALES[c.scale] ? c.scale : 'g16', plus: c.plus != null ? +c.plus : 0.3,   // plus 0: no tendencies (+ / −)
@@ -522,6 +642,16 @@ const VIEWS = {
               const tm = timeOf(o.l, o.p);
               return `<div class="row" data-goto="${o.date}|${o.day}|${o.period}">${openSlot(o.l.group)}<span class="grow">${esc(o.date === d ? t('d.today') : o.date === addDays(d, 1) ? t('d.tomorrow') : fmtDate(o.date))} · ${esc(tm.start)}</span>
                 ${dl ? `<span class="badge${late ? ' red' : o.date === d ? ' warn' : ''}">${esc(t('area.until', {time: dl}))}</span>` : ''}</div>`; }).join('')}</div>`;
+        })()}
+        ${(() => {
+          const todayS = sessions().filter(x => x.date === d).sort((a, b) => sessionStart(a).localeCompare(sessionStart(b))), late = sessions().filter(x => !x.done && x.date < d && x.date >= addDays(d, -3));
+          const week = learnedSince(mondayOf(d)), total = Object.values(week).reduce((a, b) => a + b, 0);
+          if (!todayS.length && !late.length && !total) return '';
+          return `<div class="pcard"><h2>${esc(t('study.today'))}</h2>
+            ${late.length ? `<div class="group-h red">${esc(t('study.late'))}</div>${late.map(studyRow).join('')}` : ''}
+            ${todayS.length ? todayS.map(studyRow).join('') : `<div class="empty-s">${esc(t('study.nothingToday'))}</div>`}
+            ${total ? `<div class="group-h">${esc(t('study.week', {n: total}))}</div><div class="study-bars">${Object.entries(week).sort((a, b) => b[1] - a[1]).map(([sid, n]) => { const s = subj(sid) || {name: t('ui.noSubject'), color: '#888'};
+              return `<div class="sb-row"><span class="sb-name">${esc(s.name)}</span><span class="sb-bar"><i style="width:${Math.round(n / Math.max(...Object.values(week)) * 100)}%;background:${s.color}"></i></span><span class="meta">${esc(t('study.min', {n}))}</span></div>`; }).join('')}</div>` : ''}</div>`;
         })()}
         <div class="pcard"><h2>${esc(t('ui.homework'))}<button class="btn-sm" data-act="newTask">${esc(t('ui.add'))}</button></h2>
           ${overdue.length ? `<div class="group-h red">${esc(t('g.overdue'))}</div>${overdue.sort(byDue).map(x => taskRow(x, true)).join('')}` : ''}
@@ -785,6 +915,16 @@ function renderDetails() {
       ${field('ui.dateTime', `<div class="two"><input type="date" data-f="date" value="${esc(e.date || '')}"><input type="time" data-f="time" value="${esc(e.time || '')}"></div>`)}
       ${e.time ? field('ui.minutes', `<input class="field-in" type="number" min="5" max="600" step="5" data-f="minutes" value="${esc(e.minutes || 90)}">`) : ''}
       ${field('ui.notes', `<textarea data-f="notes" placeholder="${esc(t('ui.eventNotesPh'))}">${esc(e.notes || '')}</textarea>`)}
+      ${STUDY_TYPES.includes(e.type) && validIso(e.date) ? (() => {
+        const tp = e.topics || [], pr = topicProgress(e), ss = sessions().filter(x => x.event === e.id), cfg = studyCfg();
+        return `<div class="sect">${esc(t('study.prep'))}${pr != null ? ` · ${pr} %` : ''}</div>
+          ${pr != null ? `<div class="prog"><i style="width:${pr}%"></i></div>` : ''}
+          <div class="topics">${tp.map(x => `<div class="topic"><label><input type="checkbox" data-topic-done="${x.id}"${x.done ? ' checked' : ''}> ${esc(x.text)}</label><button class="x" data-topic-del="${x.id}" title="${esc(t('a.delete'))}">×</button></div>`).join('')}</div>
+          <input class="field-in" data-topic-add placeholder="${esc(t('study.topicPh'))}" style="width:100%">
+          ${field('study.total', `<div class="two"><input class="field-in" type="number" min="15" step="15" data-f="prepMinutes" value="${esc(e.prepMinutes || '')}" placeholder="${esc(cfg.total[e.type] || 120)}"><span class="meta">${esc(t('study.minutesTotal'))}</span></div>`)}
+          <p><button class="btn-sm primary" data-plan-study>${esc(t(ss.length ? 'study.replan' : 'study.makePlan'))}</button></p>
+          ${ss.length ? `<div class="sessions">${ss.map(x => `<div class="sess${x.done ? ' done' : ''}"><span>${esc(fmtDate(x.date))} · ${esc(sessionStart(x))}</span><span class="grow">${esc(x.topic || '')}</span><span class="meta">${esc(t('study.min', {n: x.minutes}))}</span><button class="x" data-sess-del="${x.id}" title="${esc(t('a.delete'))}">×</button></div>`).join('')}</div>` : ''}`;
+      })() : ''}
       <p><button class="btn-sm" data-copy-week>${esc(t('ui.copyWeek'))}</button> ${['exam', 'test', 'talk'].includes(e.type) ? `<button class="btn-sm" data-grade-for="${e.id}">${esc(t(grades().some(g => g.event === e.id) ? 'grade.showForEvent' : 'grade.forEvent'))}</button> ` : ''}<button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
   } else if (sel.kind === 'grade') {
     const g = grades().find(y => y.id === sel.id); if (!g) return;
@@ -826,10 +966,11 @@ function renderWeekAhead() {
   $('#weekAhead').innerHTML = Array.from({length: 7}, (_, i) => {
     const day = addDays(d, i), w = weekday(day);
     const tasks = plan.tasks.filter(x => !x.done && x.due === day), events = plan.events.filter(e => e.date === day), cal = calEventsOn(day);
+    const st = sessions().filter(x => x.date === day && !x.done).sort((a, b) => sessionStart(a).localeCompare(sessionStart(b)));
     const n = (w < plan.days ? plan.lessons.filter(l => l.day === w && !blockedAt(w, l.period) && lessonOn(l, day) && !choiceOn(l, day).off).length : 0) + classesOn(day).length;
     return `<div class="sect">${esc(i === 0 ? t('d.today') : i === 1 ? t('d.tomorrow') : fmtDate(day, {weekday: 'long', day: 'numeric', month: 'short'}))}
       <span style="float:right;text-transform:none;letter-spacing:0;font-weight:400">${n ? esc(t(n === 1 ? 'ui.nLesson' : 'ui.nLessons', {n})) : ''}</span></div>
-      ${events.map(e => eventRow(e, false)).join('')}${tasks.map(x => taskRow(x, true)).join('')}${cal.map(calRow).join('')}${!events.length && !tasks.length && !cal.length ? `<div class="empty-s">—</div>` : ''}`;
+      ${events.map(e => eventRow(e, false)).join('')}${tasks.map(x => taskRow(x, true)).join('')}${st.map(studyRow).join('')}${cal.map(calRow).join('')}${!events.length && !tasks.length && !cal.length && !st.length ? `<div class="empty-s">—</div>` : ''}`;
   }).join('');
 }
 function updateStatus() {
@@ -851,6 +992,10 @@ function renderAll() { if (!plan) return; wtCache = {}; renderView(); renderDeta
 /* ================= Interaction ================= */
 const view = $('#view');
 view.addEventListener('click', e => {
+  const sd = e.target.closest('[data-sdone]');
+  if (sd) { const x = sessions().find(y => y.id === sd.dataset.sdone); if (x) change(() => { x.done = sd.checked; }); return; }
+  const tm = e.target.closest('[data-timer]');
+  if (tm) { startTimer(tm.dataset.timer); return; }
   const done = e.target.closest('[data-done]');
   if (done) { const x = plan.tasks.find(y => y.id === done.dataset.done); change(() => { x.done = done.checked; }); return; }
   if (e.target.id === 'showDone') { settings.showDone = e.target.checked; saveSettings(); renderView(); return; }
@@ -875,6 +1020,10 @@ view.addEventListener('click', e => {
   }
 });
 $('#weekAhead').addEventListener('click', e => {
+  const sd = e.target.closest('[data-sdone]');
+  if (sd) { const x = sessions().find(y => y.id === sd.dataset.sdone); if (x) change(() => { x.done = sd.checked; }); return; }
+  const tm = e.target.closest('[data-timer]');
+  if (tm) { startTimer(tm.dataset.timer); return; }
   const done = e.target.closest('[data-done]');
   if (done) { const x = plan.tasks.find(y => y.id === done.dataset.done); change(() => { x.done = done.checked; }); return; }
   const row = e.target.closest('[data-task],[data-event]');
@@ -970,6 +1119,17 @@ $('#details').addEventListener('change', e => {
     });
     return;
   }
+  if (e.target.matches('[data-topic-add]') && sel && sel.kind === 'event') {
+    const ev = eventOf(sel.id), text = e.target.value.trim(); if (!ev || !text) return;
+    change(() => { ev.topics = [...(ev.topics || []), {id: uid(), text, done: false}]; });
+    setTimeout(() => { const i = $('#details [data-topic-add]'); if (i) i.focus(); }, 0);
+    return;
+  }
+  if (e.target.dataset.topicDone && sel && sel.kind === 'event') {
+    const ev = eventOf(sel.id), x = ev && (ev.topics || []).find(y => y.id === e.target.dataset.topicDone);
+    if (x) change(() => { x.done = e.target.checked; });
+    return;
+  }
   if (e.target.dataset.lskip) {
     const l = plan.lessons.find(x => x.id === e.target.dataset.lskip), date = addDays(shownMonday(), sel.day);
     if (l) change(() => { const set = new Set(l.skip || []); e.target.checked ? set.add(date) : set.delete(date); l.skip = [...set].filter(x => x >= addDays(today(), -400)).sort(); });
@@ -990,7 +1150,7 @@ $('#details').addEventListener('change', e => {
     : sel.kind === 'grade' ? grades().find(x => x.id === sel.id) : subj(sel.id);
   if (!obj) return;
   const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-  change(() => { obj[f] = f === 'minutes' ? clamp(Math.round(+v) || 90, 5, 600) : f === 'weight' ? +v || 1 : typeof v === 'string' && f !== 'notes' ? v.trim() : v; });
+  change(() => { obj[f] = f === 'minutes' ? clamp(Math.round(+v) || 90, 5, 600) : f === 'weight' ? +v || 1 : f === 'prepMinutes' ? (+v > 0 ? Math.round(+v) : '') : typeof v === 'string' && f !== 'notes' ? v.trim() : v; });
 });
 $('#details').addEventListener('click', e => {
   const a = e.target.closest('[data-assign]');
@@ -1028,6 +1188,17 @@ $('#details').addEventListener('click', e => {
     const free = terms().find(x => !used.has(x.id) && x.to >= date) || terms().find(x => !used.has(x.id));
     const first = !plan.lessons.some(x => x.day === day && x.period === period);
     change(() => plan.lessons.push({id: uid(), day, period, subject: '', group: cur ? cur.group || '' : '', room: '', terms: !first && free ? [free.id] : []}));
+    return;
+  }
+  const tdel = e.target.closest('[data-topic-del]');
+  if (tdel && sel && sel.kind === 'event') { const ev = eventOf(sel.id); change(() => { ev.topics = (ev.topics || []).filter(x => x.id !== tdel.dataset.topicDel); }); return; }
+  const sdel = e.target.closest('[data-sess-del]');
+  if (sdel) { change(() => { plan.study = sessions().filter(x => x.id !== sdel.dataset.sessDel); }); return; }
+  if (e.target.closest('[data-plan-study]') && sel && sel.kind === 'event') {
+    const ev = eventOf(sel.id); if (!ev) return;
+    const r = planStudy(ev);
+    change(() => { plan.study = r.list; });
+    toast(r.made ? t('study.planned', {n: r.made}) : t('study.noDays'));
     return;
   }
   const gf = e.target.closest('[data-grade-for]');
@@ -1072,7 +1243,7 @@ function deleteSel() {
     change(() => { plan.subjects = plan.subjects.filter(s => s.id !== id); plan.lessons = plan.lessons.filter(l => l.subject !== id); });
   } else {
     const key = sel.kind === 'task' ? 'tasks' : sel.kind === 'grade' ? 'grades' : 'events', id = sel.id;
-    change(() => { plan[key] = plan[key].filter(x => x.id !== id); });
+    change(() => { plan[key] = plan[key].filter(x => x.id !== id); if (key === 'events') plan.study = sessions().filter(x => x.event !== id); });
   }
   sel = null; renderAll();
 }
@@ -1333,6 +1504,17 @@ function renderSettings() {
         ${cycle() && Object.keys(c.overrides || {}).length ? `<p class="hint">${esc(t('set.overrides', {list: Object.entries(c.overrides).sort().map(([m, nm]) => `${fmtDate(m, {day: 'numeric', month: 'numeric'})}: ${nm}`).join(', ')}))}
           <button class="btn-sm" data-cycle-clear>${esc(t('set.clearOverrides'))}</button></p>` : ''}`;
     })(),
+    study: (() => {
+      const c = studyCfg(), num = (k, v, min, max, step = 5) => `<input class="field-in" type="number" min="${min}" max="${max}" step="${step}" data-study="${k}" value="${esc(v)}" style="width:80px">`;
+      return `<h3>${esc(t('study.set'))}</h3><p class="hint">${esc(t('study.setHint'))}</p>
+        <div class="daylen"><label>${esc(t('study.perDay'))}</label><span>${num('perDay', c.perDay, 15, 600, 15)} ${esc(t('study.minutes'))}</span>
+          <label>${esc(t('study.chunk'))}</label><span>${num('chunk', c.chunk, 10, 180)} ${esc(t('study.minutes'))}</span>
+          <label>${esc(t('study.from'))}</label><input type="time" data-study="from" value="${esc(c.from)}">
+          ${STUDY_TYPES.map(ty => `<label>${esc(t('type.' + ty))}</label><span>${num('lead.' + ty, c.lead[ty], 1, 60, 1)} ${esc(t('study.daysBefore'))} · ${num('total.' + ty, c.total[ty], 15, 3000, 15)} ${esc(t('study.minutes'))}</span>`).join('')}</div>
+        <h3>${esc(t('study.timer'))}</h3><div class="daylen"><label>${esc(t('study.work'))}</label><span>${num('work', c.work, 5, 120)} ${esc(t('study.minutes'))}</span>
+          <label>${esc(t('study.rest'))}</label><span>${num('rest', c.rest, 1, 60, 1)} ${esc(t('study.minutes'))}</span></div>
+        <label class="switch"><input type="checkbox" data-study="inCalendar"${c.inCalendar ? ' checked' : ''}><span></span>${esc(t('study.inCalendar'))}</label>`;
+    })(),
     grades: (() => {
       const cfg = gradeCfg(), sum = cfg.cats.reduce((n, c) => n + (+c.weight || 0), 0);
       return `<h3>${esc(t('grade.scale'))}</h3><select class="wide-sel" data-gcfg="scale">${['g16', 'p15', 'pct'].map(k => opt(k, t('grade.scale.' + k), cfg.scale)).join('')}</select>
@@ -1375,7 +1557,7 @@ function renderSettings() {
     })(),
     keys: '<div id="keysBox"></div>'
   };
-  const sections = ['general', 'appearance', 'timetable', 'year', 'electives', 'grades', 'calendars', 'mycal', 'keys'];
+  const sections = ['general', 'appearance', 'timetable', 'year', 'electives', 'grades', 'study', 'calendars', 'mycal', 'keys'];
   $('#modalTitle').textContent = t('set.title');
   $('#modalBody').innerHTML = `<div class="prefs"><nav>${sections.map(k =>
     `<button data-sec="${k}" class="${k === prefsSection ? 'active' : ''}">${esc(t('set.' + k))}</button>`).join('')}</nav><section>${body[prefsSection]}</section></div>`;
@@ -1455,6 +1637,12 @@ $('#modal').addEventListener('change', e => {
     const [kind, id, k] = d.range.split('|'), x = (plan[kind] || []).find(y => y.id === id), v = e.target.value.trim();
     if (x && (k === 'name' ? v : validIso(v))) change(() => { x[k] = v; if (x.from > x.to) x[k === 'from' ? 'to' : 'from'] = v; });
     renderSettings(); return;
+  }
+  if (d.study) {
+    const [k, sub] = d.study.split('.'), v = e.target.type === 'checkbox' ? e.target.checked : k === 'from' ? e.target.value : Math.max(1, Math.round(+e.target.value) || 1);
+    change(() => { const c = {...studyCfg()}; if (sub) c[k] = {...c[k], [sub]: v}; else c[k] = v; plan.studyCfg = c; });
+    if (k === 'inCalendar') pushCalendars(true);
+    return;
   }
   if (d.gcfg) {
     const v = d.gcfg === 'plus' ? +e.target.value : e.target.value;

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 — 2026-10-24
+- New: study planner. Exams, tests and presentations get topics to tick off (with progress) and "Make study plan": the
+  study time (set per type, or per exam) is spread over the days before it in sessions — at most so many minutes a day,
+  other exams included — each after school (after the last lesson of the day). "Spread again" keeps what is done.
+- "Study today" in Today, sessions in the next-7-days panel, and a study timer (25 / 5 minutes, adjustable): finished
+  study phases count for the session and the subject, shown as "Learned this week" per subject.
+- Study sessions can go into your calendar (subscription, iCloud, calendar file). Settings → Study.
+
 ## 0.7.7 — 2026-10-24
 - Dates and homework in the narrow cards of Today and in the next-7-days panel are easier to read: the title on its own
   line (wrapping instead of being cut off), with "in 4 days" next to it, and type · subject · date small below. Nothing
