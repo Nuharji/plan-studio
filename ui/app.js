@@ -677,6 +677,7 @@ const VIEWS = {
             ${total ? `<div class="group-h">${esc(t('study.week', {n: total}))}</div><div class="study-bars">${Object.entries(week).sort((a, b) => b[1] - a[1]).map(([sid, n]) => { const s = subj(sid) || {name: t('ui.noSubject'), color: '#888'};
               return `<div class="sb-row"><span class="sb-name">${esc(s.name)}</span><span class="sb-bar"><i style="width:${Math.round(n / Math.max(...Object.values(week)) * 100)}%;background:${s.color}"></i></span><span class="meta">${esc(t('study.min', {n}))}</span></div>`; }).join('')}</div>` : ''}</div>`;
         })()}
+        ${agentCard(d)}
         <div class="pcard"><h2>${esc(t('ui.homework'))}<button class="btn-sm" data-act="newTask">${esc(t('ui.add'))}</button></h2>
           ${overdue.length ? `<div class="group-h red">${esc(t('g.overdue'))}</div>${overdue.sort(byDue).map(x => taskRow(x, true)).join('')}` : ''}
           ${soon.length ? soon.sort(byDue).map(x => taskRow(x, true)).join('') : overdue.length ? '' : `<div class="empty-s">${esc(t('ui.noHomework'))}</div>`}</div>
@@ -1331,7 +1332,84 @@ function print() { const v = settings.view; if (v !== 'week' && v !== 'tasks' &&
 
 /* ================= Actions, menus, shortcuts ================= */
 function setView(v) { settings.view = v; if (sel && sel.kind === 'cell' && v !== 'week') sel = null; saveSettings(); renderAll(); }
+/* ================= Agent Studio ================= */
+/* The morning overview from Agent Studio (Claude as an assistant; agentlink.js reads its status.json): what needs
+   you, what runs, what it did for you today. Homework and dates can be entered in your own words ("Maths p. 34 by
+   Thursday") — Claude reads them and sends back entries, which you take over with one click; a study plan for the
+   next exams can be asked for, with topics from your notes in the work folder. */
+let agentSeen = '';
+function agentCard(d) {
+  const st = window.AgentLink && AgentLink.status;
+  if (!st) return '';
+  const from = dateOf(d).getTime(), done = (st.done || []).filter(x => x.ended >= from);
+  const time = ms => new Date(ms).toLocaleTimeString(lang === 'de' ? 'de-DE' : 'en-GB', {hour: '2-digit', minute: '2-digit'});
+  const items = (st.items || []).filter(x => x.kind === 'question' || x.kind === 'approval');
+  return `<div class="pcard"><h2>${esc(t('agent.card'))}<button class="btn-sm" data-act="agentOpen">${esc(t('agent.open'))}</button></h2>
+    ${st.needsYou ? `<div class="row warn-row" data-act="agentOpen">${esc(t('agent.needs', {n: st.needsYou}))}</div>${items.slice(0, 3).map(x => `<div class="row" data-act="agentOpen"><span class="grow">${esc(x.title)}</span><span class="meta">${esc(t(x.kind === 'approval' ? 'agent.approval' : 'agent.question'))}</span></div>`).join('')}` : ''}
+    ${(st.running || []).map(x => `<div class="row"><span class="badge warn">${esc(t('agent.running'))}</span><span class="grow">${esc(x.title)}</span></div>`).join('')}
+    ${done.length ? `<div class="group-h">${esc(t('agent.doneToday', {n: done.length}))}</div>${done.slice(0, 5).map(x => `<div class="row" title="${esc(x.summary)}"><span class="lesson-time">${esc(time(x.ended))}</span><span class="grow">${esc(x.title)}</span></div>`).join('')}`
+      : !st.needsYou && !(st.running || []).length ? `<div class="empty-s">${esc(t('agent.nothing'))}</div>` : ''}
+    <div class="agent-quick"><input class="field-in" id="agentIn" placeholder="${esc(t('agent.ph'))}"><button class="btn-sm primary" data-act="agentAdd">${esc(t('agent.add'))}</button></div>
+    <p class="meta" style="margin:6px 0 0"><button class="btn-sm" data-act="agentStudy">${esc(t('agent.study'))}</button></p></div>`;
+}
+/* What Claude needs to know to turn a sentence into entries. */
+function agentContext() {
+  const d = today();
+  return t('agent.ctx', {date: d, day: fmtDate(d, {weekday: 'long'}), subjects: plan.subjects.map(s => s.name).join(', ') || '—'});
+}
+const subjectByName = name => {
+  const n = String(name || '').trim().toLowerCase(); if (!n) return '';
+  const s = plan.subjects.find(x => x.name.toLowerCase() === n) || plan.subjects.find(x => x.name.toLowerCase().startsWith(n) || n.startsWith(x.name.toLowerCase()));
+  return s ? s.id : '';
+};
+/* Entries Claude sent back (studio-result block): {tasks: [{title, subject, due}], events: [{type, title, subject, date, time}]}. */
+function agentEntries(r) {
+  const x = r && r.data; if (!x || typeof x !== 'object') return null;
+  const tasks = (Array.isArray(x.tasks) ? x.tasks : []).filter(e => e && (e.title || e.subject)).map(e => {
+    const subject = subjectByName(e.subject);
+    return {id: uid(), title: String(e.title || '').slice(0, 300), subject, due: validIso(e.due) ? e.due : subject ? nextLesson(subject) : '', done: false, notes: ''};
+  });
+  const events = (Array.isArray(x.events) ? x.events : []).filter(e => e && validIso(e.date)).map(e => ({id: uid(), type: EVENT_TYPES.includes(e.type) && e.type !== 'class' ? e.type : 'other',
+    subject: subjectByName(e.subject), title: String(e.title || '').slice(0, 300), date: e.date, time: /^\d\d:\d\d$/.test(e.time || '') ? e.time : '', notes: ''}));
+  return tasks.length || events.length ? {tasks, events} : null;
+}
+function agentTake(r) {
+  const x = agentEntries(r); if (!x) return false;
+  change(() => { plan.tasks.push(...x.tasks); plan.events.push(...x.events); });
+  toast(t('agent.added', {n: x.tasks.length + x.events.length}));
+}
+function agentInit() {
+  if (!window.AgentLink) return;
+  AgentLink.init({app: 'Plan Studio', lang: () => lang,
+    actions: r => { const x = agentEntries(r); return x ? [{label: t('agent.take', {n: x.tasks.length + x.events.length}), run: () => agentTake(r)}] : []; },
+    onStatus: st => {
+      const key = JSON.stringify({...(st || {}), beat: 0});
+      if (key === agentSeen) return;
+      agentSeen = key;
+      if (booted && settings.view === 'today' && !typing()) renderView();
+    }});
+}
+view.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'agentIn') { e.preventDefault(); run('agentAdd'); } });
+
 const A = {
+  agentOpen: () => window.AgentLink && AgentLink.open(),
+  agentAdd: () => {
+    const el = $('#agentIn'), text = el ? el.value.trim() : '';
+    if (!text) { if (el) el.focus(); return; }
+    AgentLink.sendNow({title: text.slice(0, 60), kind: 'plan-entries', task: t('agent.addTask', {text}) + '\n' + agentContext(), level: 'read', web: false,
+      format: '{"tasks": [{"title": "…", "subject": "…", "due": "YYYY-MM-DD"}], "events": [{"type": "exam|test|talk|deadline|other", "title": "…", "subject": "…", "date": "YYYY-MM-DD", "time": "HH:MM"}]}'});
+    el.value = '';
+    toast(t('agent.sent'));
+  },
+  agentStudy: () => {
+    const d = today(), exams = plan.events.filter(e => STUDY_TYPES.includes(e.type) && validIso(e.date) && e.date >= d && dayDiff(d, e.date) <= 42).sort((a, b) => a.date.localeCompare(b.date));
+    if (!exams.length) { toast(t('agent.noExams')); return; }
+    const list = exams.map(e => `- ${e.date} · ${t('type.' + e.type)} · ${(subj(e.subject) || {}).name || ''}${e.title ? ' · ' + e.title : ''}${e.notes ? ' (' + e.notes.slice(0, 200) + ')' : ''}`).join('\n');
+    const work = window.Shared && (Shared.values || {}).workFolder;
+    AgentLink.sendNow({title: t('agent.studyTitle'), kind: 'study-plan', task: t('agent.studyTask', {list, mins: studyCfg().perDay || 60}) + '\n' + agentContext() + (work ? '\n' + t('agent.studyWork') : ''),
+      dir: work || '', level: 'read', web: false});
+    toast(t('agent.sent'));
+  },
   newTask: () => { setView('tasks'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
   newEvent: () => { setView('events'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
   newSubject: () => { setView('subjects'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
@@ -1806,7 +1884,7 @@ window.addEventListener('keydown', e => {
 }
 
 /* Test hook (like Md's __md / Dt's __dt). */
-window.__pl = {get plan() { return plan; }, get sel() { return sel; }, A, run, nextLesson, setView, change};
+window.__pl = {get plan() { return plan; }, get sel() { return sel; }, A, run, nextLesson, setView, change, agentEntries};
 
 /* ================= Boot ================= */
 (async function boot() {
@@ -1837,6 +1915,7 @@ window.__pl = {get plan() { return plan; }, get sel() { return sel; }, A, run, n
   booted = true;
   applySettings();
   renderAll();
+  agentInit();
   // The date changes at midnight; the current period every few minutes.
   setInterval(() => { if (!typing()) { renderView(); updateStatus(); } }, 60000);
   refreshCalendars();

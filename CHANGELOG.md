@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-10-24
+- New: Agent Studio card in Today (when Agent Studio is used on this computer): what needs you, what runs and what
+  Claude did for you today, with a button to open Agent Studio.
+- New: enter homework and dates in your own words ("Maths p. 34 by Thursday") in that card — Claude works out subject
+  and date and sends entries back; "Enter" on the card at the bottom right takes them over (undo works as usual).
+- New: Suggest a study plan — for the exams, tests and talks of the next 6 weeks, with topics from your notes in the
+  work folder (Studio Hub's settings). Needs Agent Studio 0.8 or later.
+
 ## 1.0.1 — 2026-10-24
 - New app icon: the tile now fades from dark at the top left to lighter at the bottom right, like the other Studio apps.
 

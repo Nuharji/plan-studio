@@ -3,6 +3,7 @@
 
 mod caldav;
 mod feed;
+mod agentlink;
 mod shared;
 mod store;
 mod ical;
@@ -228,6 +229,11 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             shared::shared_get,
             shared::shared_set,
+            agentlink::agent_send,
+            agentlink::agent_poll,
+            agentlink::agent_ack,
+            agentlink::agent_open,
+            agentlink::agent_open_file,
             texts,
             plan_load,
             plan_save,
