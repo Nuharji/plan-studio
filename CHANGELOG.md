@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.1 — 2026-10-24
+- New app icon: the tile now fades from dark at the top left to lighter at the bottom right, like the other Studio apps.
+
 ## 1.0.0 — 2026-10-24
 - First stable version — no longer Pre-Alpha. Plans made with any earlier version (back to 0.1.0) open unchanged;
   backups and imports keep everything.
