@@ -288,7 +288,7 @@ function persist() {
    iPhone / iPad). Both get the dates, open homework (if chosen) and the timetable of the next weeks (if chosen), and
    are brought up to date after every change. */
 let feedUrl = '', icloud = {connected: false, user: '', last_sync: 0}, icloudBusy = false, icloudT = 0, icloudErr = '';
-const calendarPayload = () => ({plan: {...plan, calendars: undefined, calCache: undefined,
+const calendarPayload = () => ({plan: {...plan, calendars: undefined, calCache: undefined, decks: undefined,
   lessonEvents: [...(settings.icsWeeks > 0 ? lessonOccurrences(settings.icsWeeks) : []), ...studyEvents()]}, lang, tasks: !!settings.icsTasks});
 /* Study sessions as calendar entries (when chosen in Settings → Study). */
 const studyEvents = () => !studyCfg().inCalendar ? [] : sessions().filter(x => !x.done && x.date >= today()).map(x => {
@@ -357,7 +357,7 @@ function undo() { if (!hist.back.length) return; wtCache = {}; hist.fwd.push(JSO
 function redo() { if (!hist.fwd.length) return; hist.back.push(JSON.stringify(plan)); plan = JSON.parse(hist.fwd.pop()); fixSel(); persist(); renderAll(); }
 function fixSel() {
   if (!sel) return;
-  const list = {task: plan.tasks, event: plan.events, subject: plan.subjects, grade: grades()}[sel.kind];
+  const list = {task: plan.tasks, event: plan.events, subject: plan.subjects, grade: grades(), deck: decks()}[sel.kind];
   if (list && !list.some(x => x.id === sel.id)) sel = null;
 }
 
@@ -677,6 +677,7 @@ const VIEWS = {
             ${total ? `<div class="group-h">${esc(t('study.week', {n: total}))}</div><div class="study-bars">${Object.entries(week).sort((a, b) => b[1] - a[1]).map(([sid, n]) => { const s = subj(sid) || {name: t('ui.noSubject'), color: '#888'};
               return `<div class="sb-row"><span class="sb-name">${esc(s.name)}</span><span class="sb-bar"><i style="width:${Math.round(n / Math.max(...Object.values(week)) * 100)}%;background:${s.color}"></i></span><span class="meta">${esc(t('study.min', {n}))}</span></div>`; }).join('')}</div>` : ''}</div>`;
         })()}
+        ${learnCard(d)}
         ${agentCard(d)}
         <div class="pcard"><h2>${esc(t('ui.homework'))}<button class="btn-sm" data-act="newTask">${esc(t('ui.add'))}</button></h2>
           ${overdue.length ? `<div class="group-h red">${esc(t('g.overdue'))}</div>${overdue.sort(byDue).map(x => taskRow(x, true)).join('')}` : ''}
@@ -864,13 +865,16 @@ function renderView() {
   const v = $('#view');
   const focus = document.activeElement && document.activeElement.id;
   const keep = {title: $('#qTitle') && $('#qTitle').value, subject: $('#qSubject') && $('#qSubject').value};
+  const keepIn = ['qFront', 'qBack', 'drillIn'].map(id => [id, $('#' + id) && $('#' + id).value]);
   v.innerHTML = VIEWS[settings.view] ? VIEWS[settings.view]() : '';
+  keepIn.forEach(([id, val]) => { if (val && $('#' + id)) $('#' + id).value = val; });
   // Quick-add fields keep what was being typed when the view is redrawn.
   if (keep.title && $('#qTitle')) $('#qTitle').value = keep.title;
   if (keep.subject && $('#qSubject')) $('#qSubject').value = keep.subject;
   if ($('#qDue') && !$('#qDue').value) $('#qDue').value = nextLesson($('#qSubject').value);
   if ($('#qDate') && !$('#qDate').value) $('#qDate').value = settings.view === 'grades' ? today() : addDays(today(), 7);
   if (focus && $('#' + focus)) $('#' + focus).focus();
+  if ($('#drillIn')) $('#drillIn').focus();
   $$('#tools .ibtn.view').forEach(b => b.classList.toggle('active', b.dataset.act === 'view' + settings.view[0].toUpperCase() + settings.view.slice(1)));
 }
 /* The panel on the right: details of what is selected (or of the selected timetable cell). */
@@ -948,7 +952,10 @@ function renderDetails() {
           <input class="field-in" data-topic-add placeholder="${esc(t('study.topicPh'))}" style="width:100%">
           ${field('study.total', `<div class="two"><input class="field-in" type="number" min="15" step="15" data-f="prepMinutes" value="${esc(e.prepMinutes || '')}" placeholder="${esc(cfg.total[e.type] || 120)}"><span class="meta">${esc(t('study.minutesTotal'))}</span></div>`)}
           <p><button class="btn-sm primary" data-plan-study>${esc(t(ss.length ? 'study.replan' : 'study.makePlan'))}</button></p>
-          ${ss.length ? `<div class="sessions">${ss.map(x => `<div class="sess${x.done ? ' done' : ''}"><span>${esc(fmtDate(x.date))} · ${esc(sessionStart(x))}</span><span class="grow">${esc(x.topic || '')}</span><span class="meta">${esc(t('study.min', {n: x.minutes}))}</span><button class="x" data-sess-del="${x.id}" title="${esc(t('a.delete'))}">×</button></div>`).join('')}</div>` : ''}`;
+          ${ss.length ? `<div class="sessions">${ss.map(x => `<div class="sess${x.done ? ' done' : ''}"><span>${esc(fmtDate(x.date))} · ${esc(sessionStart(x))}</span><span class="grow">${esc(x.topic || '')}</span><span class="meta">${esc(t('study.min', {n: x.minutes}))}</span><button class="x" data-sess-del="${x.id}" title="${esc(t('a.delete'))}">×</button></div>`).join('')}</div>` : ''}
+          ${(() => { const ks = decks().filter(k => k.event === e.id || (!k.event && e.subject && k.subject === e.subject));
+            return `<div class="sect">${esc(t('learn.cardsFor'))}</div>${ks.map(k => `<div class="sess"><span class="grow">${esc(k.name)}</span><span class="meta">${esc(t('learn.nDue', {n: dueCards(k).length}))}</span><button class="btn-sm" data-open-deck="${k.id}">${esc(t('learn.open'))}</button></div>`).join('')}
+              <p><button class="btn-sm" data-deck-for="${e.id}">${esc(t('learn.deckFor'))}</button></p>`; })()}`;
       })() : ''}
       <p><button class="btn-sm" data-copy-week>${esc(t('ui.copyWeek'))}</button> ${['exam', 'test', 'talk'].includes(e.type) ? `<button class="btn-sm" data-grade-for="${e.id}">${esc(t(grades().some(g => g.event === e.id) ? 'grade.showForEvent' : 'grade.forEvent'))}</button> ` : ''}<button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
   } else if (sel.kind === 'grade') {
@@ -963,6 +970,8 @@ function renderDetails() {
       ${field('grade.date', `<input type="date" data-f="date" value="${esc(g.date || '')}">`)}
       ${field('ui.notes', `<textarea data-f="notes">${esc(g.notes || '')}</textarea>`)}
       <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
+  } else if (sel.kind === 'deck') {
+    deckDetails(box, field);
   } else if (sel.kind === 'subject') {
     const s = subj(sel.id); if (!s) return;
     box.innerHTML = `<div class="sect">${esc(t('ui.subject'))}</div>
@@ -1065,7 +1074,7 @@ view.addEventListener('change', e => {
 view.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.closest('.quick')) { e.preventDefault(); quickAdd(); } });
 function showDetails() { settings.dockTab = 'details'; if (!settings.dock) settings.dock = true; applySettings(); renderView(); }
 function quickAdd() {
-  const title = ($('#qTitle').value || '').trim();
+  const title = (($('#qTitle') || {}).value || '').trim();
   if (settings.view === 'tasks') {
     if (!title) return $('#qTitle').focus();
     const x = {id: uid(), title, subject: $('#qSubject').value, due: $('#qDue').value || '', done: false, notes: ''};
@@ -1087,6 +1096,16 @@ function quickAdd() {
     change(() => { plan.grades = [...grades(), g]; });
     $('#qGrade').value = ''; $('#qTitle').value = ''; $('#qGrade').focus();
     toast(t('grade.added'));
+  } else if (settings.view === 'learn' && $('#qFront')) {
+    const front = $('#qFront').value.trim(), back = $('#qBack').value.trim();
+    if (!front) return $('#qFront').focus();
+    if (!back) return $('#qBack').focus();
+    const n = addCards(settings.learnDeck, [{front, back}]);
+    if (!n) toast(t('learn.dupe'));
+    $('#qFront').value = ''; $('#qBack').value = ''; $('#qFront').focus();
+  } else if (settings.view === 'learn') {
+    if (!title) return $('#qTitle').focus();
+    newDeck({name: title, kind: $('#qKind').value, subject: $('#qSubject').value});
   } else if (settings.view === 'subjects') {
     if (!title) return $('#qTitle').focus();
     const s = {id: uid(), name: title, short: title.slice(0, 2), color: COLORS[plan.subjects.length % COLORS.length], teacher: '', room: ''};
@@ -1172,7 +1191,7 @@ $('#details').addEventListener('change', e => {
   }
   if (!f || !sel) return;
   const obj = sel.kind === 'task' ? plan.tasks.find(x => x.id === sel.id) : sel.kind === 'event' ? plan.events.find(x => x.id === sel.id)
-    : sel.kind === 'grade' ? grades().find(x => x.id === sel.id) : subj(sel.id);
+    : sel.kind === 'grade' ? grades().find(x => x.id === sel.id) : sel.kind === 'deck' ? deckOf(sel.id) : subj(sel.id);
   if (!obj) return;
   const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
   change(() => { obj[f] = f === 'minutes' ? clamp(Math.round(+v) || 90, 5, 600) : f === 'weight' ? +v || 1 : f === 'prepMinutes' ? (+v > 0 ? Math.round(+v) : '') : typeof v === 'string' && f !== 'notes' ? v.trim() : v; });
@@ -1261,6 +1280,13 @@ function setPick(l, date, id) {
 function deleteSel() {
   if (!sel) return;
   if (sel.kind === 'cell') { const l = lessonAt(sel.day, sel.period, addDays(shownMonday(), sel.day), false); if (l) change(() => { plan.lessons = plan.lessons.filter(x => x !== l); }); return; }
+  if (sel.kind === 'deck') {
+    const k = deckOf(sel.id); if (!k) return;
+    if (k.cards.length && !confirm(t('learn.deleteAsk', {name: k.name, n: k.cards.length}))) return;
+    if (drill && drill.deck === k.id) drill = null;
+    change(() => { plan.decks = decks().filter(x => x !== k); });
+    sel = null; renderAll(); return;
+  }
   if (sel.kind === 'subject') {
     const used = plan.lessons.some(l => l.subject === sel.id) || plan.tasks.some(x => x.subject === sel.id) || plan.events.some(x => x.subject === sel.id);
     if (used && !confirm(t('confirm.deleteSubject'))) return;
@@ -1381,7 +1407,9 @@ function agentTake(r) {
 function agentInit() {
   if (!window.AgentLink) return;
   AgentLink.init({app: 'Plan Studio', lang: () => lang,
-    actions: r => { const x = agentEntries(r); return x ? [{label: t('agent.take', {n: x.tasks.length + x.events.length}), run: () => agentTake(r)}] : []; },
+    actions: r => { const x = agentEntries(r), c = agentCardList(r);
+      return [...x ? [{label: t('agent.take', {n: x.tasks.length + x.events.length}), run: () => agentTake(r)}] : [],
+        ...c ? [{label: t('learn.take', {n: c.cards.length}), run: () => agentTakeCards(r)}] : []]; },
     onStatus: st => {
       const key = JSON.stringify({...(st || {}), beat: 0});
       if (key === agentSeen) return;
@@ -1390,6 +1418,362 @@ function agentInit() {
     }});
 }
 view.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'agentIn') { e.preventDefault(); run('agentAdd'); } });
+
+/* ================= Learning: flashcards and vocabulary ================= */
+/* Decks of cards (front / back) or of vocabulary (language A / B), per subject and, if you like, for an exam. Learning
+   goes by the Leitner system: a card you knew moves up a box and comes back later (after 1, 2, 4, 8, 16 days), one you
+   didn't goes back to box 1 and comes again in the same round. Three ways to practise: turn over, type the answer, pick
+   one of four. "Practise all" leaves the boxes alone. The minutes practised count as learned for the subject (Today). */
+const BOX_DAYS = [0, 1, 2, 4, 8, 16];
+const DRILL_MODES = ['flip', 'write', 'choice'], DRILL_DIRS = ['ab', 'ba', 'mix'];
+const decks = () => plan.decks || [];
+const deckOf = id => decks().find(x => x.id === id);
+const cardDue = (c, d = today()) => !c.due || c.due <= d;
+const dueCards = (k, d = today()) => k.cards.filter(c => cardDue(c, d));
+const knownCards = k => k.cards.filter(c => (c.box || 0) >= 4).length;
+const sideName = (k, b) => k.kind === 'vocab' ? ((b ? k.b : k.a) || t(b ? 'learn.langB' : 'learn.langA')) : t(b ? 'learn.back' : 'learn.front');
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+/* Answers are compared without case, punctuation, parts in brackets and umlaut spelling (ä = ae, ß = ss). */
+const normAnswer = s => String(s || '').toLowerCase().normalize('NFC').replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+  .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/[.!?¡¿"'„“”‚‘’«»…]/g, '').replace(/\s+/g, ' ').trim();
+function editDistance(a, b) {
+  let prev = Array.from({length: b.length + 1}, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+/* 'right', 'almost' (one typo in a longer answer) or 'wrong'. Each alternative of an answer counts ("house; home", "go / went"). */
+function checkAnswer(typed, answer) {
+  const x = normAnswer(typed); if (!x) return 'wrong';
+  const opts = [answer, ...String(answer || '').split(/[;,/|]/)].map(normAnswer).filter(Boolean);
+  if (opts.includes(x) || opts.includes(x.replace(/^to /, '')) || opts.map(o => o.replace(/^to /, '')).includes(x)) return 'right';
+  return opts.some(o => o.length >= 5 && editDistance(o, x) <= 1) ? 'almost' : 'wrong';
+}
+/* A pasted list: one card per line, front and back split by a tab, " = ", " – ", " - ", ";" or ":" (the first one found,
+   in this order) — as copied from Excel, Quizlet or a vocabulary list. */
+function parseCards(text) {
+  const seps = ['\t', ' = ', ' – ', ' — ', ' - ', ';', ' : ', ':'];
+  return String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+    for (const s of seps) { const i = l.indexOf(s); if (i > 0) return {front: l.slice(0, i).trim(), back: l.slice(i + s.length).trim()}; }
+    return null;
+  }).filter(c => c && c.front && c.back);
+}
+const newCard = (front, back) => ({id: uid(), front: String(front).slice(0, 1000), back: String(back).slice(0, 1000), box: 0, due: '', right: 0, wrong: 0});
+function newDeck(x = {}) {
+  const k = {id: uid(), name: x.name || t('learn.newDeck'), kind: x.kind || 'cards', subject: x.subject || '', event: x.event || '',
+    a: x.kind === 'vocab' ? t('learn.defA') : '', b: x.kind === 'vocab' ? t('learn.defB') : '', cards: []};
+  change(() => { plan.decks = [...decks(), k]; });
+  openDeck(k.id);
+  return k;
+}
+function openDeck(id) {
+  settings.learnDeck = id || ''; settings.view = 'learn'; drill = null;
+  if (id) { sel = {kind: 'deck', id}; showDetails(); } else { if (sel && sel.kind === 'deck') sel = null; saveSettings(); }
+  renderAll();
+  if (id) setTimeout(() => $('#qFront') && $('#qFront').focus(), 0);
+}
+/* Box overview of a deck: how many cards are new, in boxes 1–3 and known (boxes 4–5). */
+function boxBar(k) {
+  const n = k.cards.length || 1, part = (f, cls) => { const c = k.cards.filter(f).length; return c ? `<i class="${cls}" style="width:${c / n * 100}%" title="${c}"></i>` : ''; };
+  return `<div class="boxbar">${part(c => (c.box || 0) >= 4, 'b-known')}${part(c => c.box >= 1 && c.box < 4, 'b-learn')}${part(c => !c.box, 'b-new')}</div>`;
+}
+const boxDots = c => `<span class="boxdots" title="${esc(t('learn.boxN', {n: c.box || 0}))}">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= (c.box || 0) ? 'on' : ''}"></i>`).join('')}</span>`;
+function deckRow(k, d = today()) {
+  const due = dueCards(k, d).length;
+  return `<div class="row" data-deck="${k.id}">${chip(subj(k.subject))}<span class="grow">${esc(k.name)}</span>
+    <span class="meta">${esc(t('learn.nDue', {n: due}))}</span>${due ? `<button class="btn-sm" data-learn="${k.id}">${esc(t('learn.go'))}</button>` : ''}</div>`;
+}
+/* Today: the decks with cards to repeat. */
+function learnCard(d) {
+  const list = decks().filter(k => dueCards(k, d).length && k.cards.length);
+  if (!list.length) return '';
+  return `<div class="pcard"><h2>${esc(t('learn.today'))}<button class="btn-sm" data-act="viewLearn">${esc(t('learn.all'))}</button></h2>${list.map(k => deckRow(k, d)).join('')}</div>`;
+}
+
+/* ----- A practice round ----- */
+let drill = null;
+function startDrill(deckId, all = false, ids = null) {
+  const k = deckOf(deckId); if (!k) return;
+  let list = ids ? k.cards.filter(c => ids.includes(c.id)) : all ? k.cards.slice() : dueCards(k);
+  if (!list.length) { toast(t(k.cards.length ? 'learn.nothingDue' : 'learn.noCards')); return; }
+  // Due cards: the ones already learning first, then new ones; at most 40 per round.
+  list = ids || all ? shuffle(list) : [...shuffle(list.filter(c => c.box)), ...shuffle(list.filter(c => !c.box))].slice(0, 40);
+  let mode = DRILL_MODES.includes(settings.learnMode) ? settings.learnMode : 'flip';
+  if (mode === 'choice' && new Set(k.cards.map(c => normAnswer(c.back))).size < 3) { mode = 'flip'; toast(t('learn.choiceFew')); }
+  drill = {deck: k.id, all: all || !!ids, mode, dir: DRILL_DIRS.includes(settings.learnDir) ? settings.learnDir : 'ab', queue: list.map(c => c.id), pos: 0,
+    seen: new Set(), again: {}, wrongIds: new Set(), right: 0, wrong: 0, started: Date.now(), snap: false, done: false};
+  settings.view = 'learn'; settings.learnDeck = k.id; saveSettings();
+  prepCard(); renderAll();
+}
+const drillDeck = () => drill && deckOf(drill.deck);
+const drillCard = () => { const k = drillDeck(); return k && k.cards.find(c => c.id === drill.queue[drill.pos]); };
+/* Shows the next card: which side is asked, and the four answers to pick from. */
+function prepCard() {
+  const k = drillDeck(), c = drillCard();
+  while (k && !c && drill.pos < drill.queue.length) { drill.pos++; if (drillCard()) return prepCard(); }
+  if (!k || !drillCard()) return finishDrill();
+  drill.rev = drill.dir === 'ba' || (drill.dir === 'mix' && Math.random() < 0.5);
+  drill.shown = false; drill.result = null; drill.picked = null; drill.typed = '';
+  if (drill.mode === 'choice') {
+    const ans = drill.rev ? c.front : c.back, seen = new Set([normAnswer(ans)]), others = [];
+    for (const o of shuffle(k.cards.filter(x => x !== c))) { const v = drill.rev ? o.front : o.back, n = normAnswer(v); if (!seen.has(n)) { seen.add(n); others.push(v); } if (others.length === 3) break; }
+    drill.opts = shuffle([ans, ...others]);
+  }
+}
+/* Known or not: the first answer to a card in a round moves it between the boxes; a wrong card comes again later. */
+function drillAnswer(ok) {
+  const c = drillCard(); if (!c) return;
+  if (!drill.snap) { hist.back.push(JSON.stringify(plan)); if (hist.back.length > 100) hist.back.shift(); hist.fwd = []; drill.snap = true; }   // one undo step per round
+  if (!drill.seen.has(c.id)) {
+    drill.seen.add(c.id); ok ? drill.right++ : drill.wrong++;
+    ok ? c.right = (c.right || 0) + 1 : c.wrong = (c.wrong || 0) + 1;
+    if (!drill.all) { c.box = ok ? Math.min(5, (c.box || 0) + 1) : 1; c.due = addDays(today(), BOX_DAYS[c.box]); }
+    c.last = today();
+  }
+  if (!ok) { drill.wrongIds.add(c.id); drill.again[c.id] = (drill.again[c.id] || 0) + 1; if (drill.again[c.id] <= 3) drill.queue.push(c.id); }
+  persist();
+  drill.pos++;
+  prepCard(); renderView();
+}
+function finishDrill() {
+  if (!drill || drill.done) return;
+  drill.done = true;
+  drill.minutes = Math.round((Date.now() - drill.started) / 60000);
+  const k = drillDeck();
+  if (k && drill.seen.size && drill.minutes >= 1) {
+    if (!drill.snap) { hist.back.push(JSON.stringify(plan)); hist.fwd = []; drill.snap = true; }
+    plan.studyLog = [...studyLog(), {date: today(), subject: k.subject || '', event: k.event || '', minutes: drill.minutes, deck: k.id}].filter(l => l.date >= addDays(today(), -400));
+    persist();
+  }
+}
+/* Ending a round early: what was answered counts, then the summary. */
+function stopDrill() {
+  if (!drill) return;
+  if (drill.done || !drill.seen.size) { drill = null; renderAll(); return; }
+  finishDrill(); renderAll();
+}
+function drillCheck() {
+  const c = drillCard(), inp = $('#drillIn'); if (!c || drill.result) return;
+  drill.typed = inp ? inp.value : '';
+  drill.result = checkAnswer(drill.typed, drill.rev ? c.front : c.back);
+  renderView();
+}
+function drillPick(i) {
+  const c = drillCard(); if (!c || drill.result || !drill.opts || i >= drill.opts.length) return;
+  drill.picked = i; drill.result = normAnswer(drill.opts[i]) === normAnswer(drill.rev ? c.front : c.back) ? 'right' : 'wrong';
+  renderView();
+}
+function drillHtml() {
+  const k = drillDeck(); if (!k) { drill = null; return ''; }
+  if (drill.done) {
+    const n = drill.right + drill.wrong;
+    return `<div class="drill"><div class="flash done"><div class="fl-q">${esc(t(drill.wrong ? 'learn.doneSome' : 'learn.doneAll'))}</div>
+      <div class="fl-stats"><span class="badge ok">${esc(t('learn.nRight', {n: drill.right}))}</span><span class="badge${drill.wrong ? ' red' : ''}">${esc(t('learn.nWrong', {n: drill.wrong}))}</span>
+        ${drill.minutes ? `<span class="badge">${esc(t('study.min', {n: drill.minutes}))}</span>` : ''}</div>
+      ${n ? `<div class="prog"><i style="width:${Math.round(drill.right / n * 100)}%"></i></div>` : ''}
+      <div class="meta">${esc(drill.all ? t('learn.allNote') : t('learn.nextDue', {n: dueCards(k).length}))}</div></div>
+      <div class="drill-btns">${drill.wrongIds.size ? `<button class="btn-sm primary" data-dr="retry">${esc(t('learn.retry', {n: drill.wrongIds.size}))}</button>` : ''}
+        <button class="btn-sm${drill.wrongIds.size ? '' : ' primary'}" data-dr="close">${esc(t('learn.backToDeck'))} <kbd>Enter</kbd></button></div></div>`;
+  }
+  const c = drillCard(), ask = drill.rev ? c.back : c.front, ans = drill.rev ? c.front : c.back;
+  const total = drill.queue.length, pr = Math.round(drill.pos / total * 100);
+  const askSide = sideName(k, drill.rev), ansSide = sideName(k, !drill.rev);
+  let body = '', btns = '';
+  if (drill.mode === 'flip') {
+    body = drill.shown ? `<div class="fl-line"></div><div class="fl-side">${esc(ansSide)}</div><div class="fl-a">${esc(ans)}</div>` : '';
+    btns = drill.shown ? `<button class="btn-sm no" data-dr="no">✗ ${esc(t('learn.no'))} <kbd>1</kbd></button><button class="btn-sm yes" data-dr="yes">✓ ${esc(t('learn.yes'))} <kbd>2</kbd></button>`
+      : `<button class="btn-sm primary" data-dr="show">${esc(t('learn.show'))} <kbd>${esc(t('learn.space'))}</kbd></button>`;
+  } else if (drill.mode === 'write') {
+    const r = drill.result;
+    body = `<div class="fl-line"></div><div class="fl-side">${esc(ansSide)}</div>` + (r
+      ? `<div class="fl-typed ${r}">${esc(drill.typed || '—')}</div><div class="fl-verdict ${r}">${esc(t('learn.r.' + r))}</div>${r === 'right' && normAnswer(drill.typed) === normAnswer(ans) ? '' : `<div class="fl-a">${esc(ans)}</div>`}`
+      : `<input class="field-in drill-in" id="drillIn" autocomplete="off" spellcheck="false" placeholder="${esc(t('learn.typePh'))}" value="${esc(drill.typed)}">`);
+    btns = r ? `${r === 'wrong' ? `<button class="btn-sm" data-dr="override">${esc(t('learn.override'))}</button>` : ''}<button class="btn-sm primary" data-dr="next">${esc(t('learn.next'))} <kbd>Enter</kbd></button>`
+      : `<button class="btn-sm" data-dr="dunno">${esc(t('learn.dunno'))}</button><button class="btn-sm primary" data-dr="check">${esc(t('learn.check'))} <kbd>Enter</kbd></button>`;
+  } else {
+    const right = i => normAnswer(drill.opts[i]) === normAnswer(ans);
+    body = `<div class="fl-line"></div><div class="fl-side">${esc(ansSide)}</div><div class="choices">${drill.opts.map((o, i) => `<button class="choice${drill.result ? right(i) ? ' right' : i === drill.picked ? ' wrong' : '' : ''}" data-pick="${i}"${drill.result ? ' disabled' : ''}><kbd>${i + 1}</kbd><span>${esc(o)}</span></button>`).join('')}</div>`;
+    btns = drill.result ? `<button class="btn-sm primary" data-dr="next">${esc(t('learn.next'))} <kbd>Enter</kbd></button>` : '';
+  }
+  return `<div class="drill"><div class="drill-top"><button class="btn-sm" data-dr="stop" title="Esc">✕ ${esc(t('learn.stop'))}</button><span class="grow">${chip(subj(k.subject))} ${esc(k.name)}${drill.all ? ` · ${esc(t('learn.practiceAll'))}` : ''}</span>
+      <span class="meta">${esc(t('learn.pos', {i: Math.min(drill.pos + 1, total), n: total}))}</span><span class="badge ok">✓ ${drill.right}</span><span class="badge red">✗ ${drill.wrong}</span></div>
+    <div class="prog"><i style="width:${pr}%"></i></div>
+    <div class="flash${drill.mode === 'flip' && !drill.shown ? ' turn' : ''}"${drill.mode === 'flip' && !drill.shown ? ' data-dr="show"' : ''}><div class="fl-side">${esc(askSide)}${drill.again[c.id] ? ` · ${esc(t('learn.again'))}` : ''}</div><div class="fl-q">${esc(ask)}</div>${body}</div>
+    <div class="drill-btns">${btns}</div></div>`;
+}
+/* Keys while practising: Space turns over, 1 / 2 (or ← / →) for not known / known, 1–4 picks, Enter checks and goes on, Esc ends. */
+function drillKey(e) {
+  if (!drill || settings.view !== 'learn' || $('#modal').classList.contains('show') || e.ctrlKey || e.metaKey || e.altKey) return false;
+  const k = e.key, inInput = e.target && e.target.id === 'drillIn';
+  const go = fn => { e.preventDefault(); e.stopPropagation(); fn(); return true; };
+  if (k === 'Escape') return go(stopDrill);
+  if (drill.done) return k === 'Enter' ? go(() => { drill = null; renderAll(); }) : false;
+  if (typing() && !inInput) return false;
+  if (drill.mode === 'flip') {
+    if (!drill.shown && (k === ' ' || k === 'Enter' || k === 'ArrowDown')) return go(() => { drill.shown = true; renderView(); });
+    if (drill.shown && (k === '1' || k === 'ArrowLeft')) return go(() => drillAnswer(false));
+    if (drill.shown && (k === '2' || k === 'ArrowRight' || k === ' ' || k === 'Enter')) return go(() => drillAnswer(true));
+  } else if (drill.mode === 'write') {
+    if (k === 'Enter') return go(() => drill.result ? drillAnswer(drill.result !== 'wrong') : drillCheck());
+  } else {
+    if (!drill.result && /^[1-4]$/.test(k)) return go(() => drillPick(+k - 1));
+    if (drill.result && (k === 'Enter' || k === ' ')) return go(() => drillAnswer(drill.result !== 'wrong'));
+  }
+  return false;
+}
+
+/* ----- The Learn view: all decks, or one deck with its cards ----- */
+VIEWS.learn = function () {
+  if (drill) return drillHtml();
+  const k = deckOf(settings.learnDeck), d = today();
+  const modeSel = `<select data-lset="learnMode" title="${esc(t('learn.mode'))}">${DRILL_MODES.map(m => `<option value="${m}"${(settings.learnMode || 'flip') === m ? ' selected' : ''}>${esc(t('learn.m.' + m))}</option>`).join('')}</select>`;
+  if (!k) {
+    const list = decks();
+    return `<div class="view-title"><h1>${esc(t('view.learn'))}</h1><span class="sub">${esc(t('learn.hint'))}</span></div>
+      <div class="quick"><input class="field-in title-in" id="qTitle" placeholder="${esc(t('learn.deckPh'))}">
+        <select id="qKind">${['cards', 'vocab'].map(x => `<option value="${x}"${settings.learnKind === x ? ' selected' : ''}>${esc(t('learn.kind.' + x))}</option>`).join('')}</select>
+        <select id="qSubject">${subjectOptions('')}</select><button class="btn-sm primary" id="qAdd">${esc(t('learn.create'))}</button></div>
+      <div class="cards">${list.map(x => { const due = dueCards(x, d).length, ev = eventOf(x.event);
+        return `<div class="pcard deck-card" data-deck="${x.id}"><h2>${subj(x.subject) ? chip(subj(x.subject)) : `<span>${esc(t('learn.kind.' + (x.kind || 'cards')))}</span>`}
+            ${due && x.cards.length ? `<button class="btn-sm primary" data-learn="${x.id}">${esc(t('learn.goN', {n: Math.min(due, 40)}))}</button>` : ''}</h2>
+          <div class="deck-name">${esc(x.name)}</div>
+          <div class="meta">${esc(t(x.cards.length === 1 ? 'learn.nCard1' : 'learn.nCards', {n: x.cards.length}))} · ${esc(t('learn.nKnown', {n: knownCards(x)}))}${ev && validIso(ev.date) ? ` · ${esc(t('learn.forEvent', {what: ev.title || t('type.' + ev.type), when: relDay(ev.date)}))}` : ''}</div>
+          ${x.cards.length ? boxBar(x) : ''}</div>`; }).join('') || `<div class="empty-s">${esc(t('learn.none'))}</div>`}</div>`;
+  }
+  const due = dueCards(k, d).length, ev = eventOf(k.event);
+  return `<div class="view-title"><button class="btn-sm" data-deck-back>‹ ${esc(t('learn.allDecks'))}</button><h1>${esc(k.name)}</h1>
+      <span class="sub">${chip(subj(k.subject))} ${esc(t(k.cards.length === 1 ? 'learn.nCard1' : 'learn.nCards', {n: k.cards.length}))} · ${esc(t('learn.nDue', {n: due}))} · ${esc(t('learn.nKnown', {n: knownCards(k)}))}${ev && validIso(ev.date) ? ` · ${esc(t('learn.forEvent', {what: ev.title || t('type.' + ev.type), when: relDay(ev.date)}))}` : ''}</span></div>
+    <div class="quick learn-go"><button class="btn-sm primary" data-learn="${k.id}"${due && k.cards.length ? '' : ' disabled'}>${esc(t('learn.goN', {n: Math.min(due, 40)}))}</button>
+      <button class="btn-sm" data-learn-all="${k.id}"${k.cards.length ? '' : ' disabled'}>${esc(t('learn.practiceAll'))}</button>
+      ${modeSel}<select data-lset="learnDir" title="${esc(t('learn.dir'))}">${DRILL_DIRS.map(x => `<option value="${x}"${(settings.learnDir || 'ab') === x ? ' selected' : ''}>${esc(x === 'mix' ? t('learn.dirMix') : `${sideName(k, x === 'ba')} → ${sideName(k, x !== 'ba')}`)}</option>`).join('')}</select>
+      ${k.cards.length ? boxBar(k) : ''}</div>
+    <div class="quick"><input class="field-in title-in" id="qFront" placeholder="${esc(sideName(k, false))}"><input class="field-in title-in" id="qBack" placeholder="${esc(sideName(k, true))}">
+      <button class="btn-sm primary" id="qAdd">${esc(t('ui.add'))}</button><button class="btn-sm" data-deck-import>${esc(t('learn.import'))}</button></div>
+    ${k.cards.length ? `<table class="ctable"><tr><th>${esc(sideName(k, false))}</th><th>${esc(sideName(k, true))}</th><th>${esc(t('learn.box'))}</th><th></th></tr>
+      ${k.cards.map(c => `<tr><td><input class="cin" data-card="${c.id}" data-side="front" value="${esc(c.front)}"></td><td><input class="cin" data-card="${c.id}" data-side="back" value="${esc(c.back)}"></td>
+        <td class="meta" title="${esc(t('learn.stats', {r: c.right || 0, w: c.wrong || 0}))}">${boxDots(c)} ${esc(!c.box ? t('learn.new') : cardDue(c, d) ? t('learn.dueNow') : relDay(c.due))}</td>
+        <td><button class="x" data-card-del="${c.id}" title="${esc(t('a.delete'))}">×</button></td></tr>`).join('')}</table>`
+      : `<div class="empty-s">${esc(t('learn.empty'))}</div>`}`;
+};
+/* The deck in the details panel: name, kind, subject, languages, exam; import, export, cards from Claude, delete. */
+function deckDetails(box, field) {
+  const k = deckOf(sel.id); if (!k) return;
+  const d = today(), exams = plan.events.filter(e => STUDY_TYPES.includes(e.type) && validIso(e.date) && (e.date >= d || e.id === k.event)).sort((a, b) => a.date.localeCompare(b.date));
+  box.innerHTML = `<div class="sect">${esc(t('learn.deck'))}</div>
+    ${field('ui.name', `<input class="field-in" data-f="name" value="${esc(k.name)}">`)}
+    ${field('learn.kindL', `<select data-f="kind">${['cards', 'vocab'].map(x => `<option value="${x}"${(k.kind || 'cards') === x ? ' selected' : ''}>${esc(t('learn.kind.' + x))}</option>`).join('')}</select>`)}
+    ${k.kind === 'vocab' ? field('learn.langs', `<div class="two"><input class="field-in" data-f="a" value="${esc(k.a || '')}" placeholder="${esc(t('learn.langA'))}"><input class="field-in" data-f="b" value="${esc(k.b || '')}" placeholder="${esc(t('learn.langB'))}"></div>`) : ''}
+    ${field('ui.subject', `<select data-f="subject">${subjectOptions(k.subject)}</select>`)}
+    ${field('learn.event', `<select data-f="event"><option value="">${esc(t('learn.noEvent'))}</option>${exams.map(e => `<option value="${e.id}"${e.id === k.event ? ' selected' : ''}>${esc(`${fmtDate(e.date)} · ${t('type.' + e.type)}${(subj(e.subject) || {}).name ? ' ' + subj(e.subject).name : ''}${e.title ? ' – ' + e.title : ''}`)}</option>`).join('')}</select><div class="meta">${esc(t('learn.eventHint'))}</div>`)}
+    <p class="pick-btns"><button class="btn-sm" data-deck-import>${esc(t('learn.import'))}</button><button class="btn-sm" data-deck-export${k.cards.length ? '' : ' disabled'}>${esc(t('learn.export'))}</button>
+      ${k.cards.some(c => c.box) ? `<button class="btn-sm" data-deck-reset>${esc(t('learn.reset'))}</button>` : ''}</p>
+    ${window.AgentLink ? `<p><button class="btn-sm" data-deck-agent>${esc(t('learn.agent'))}</button></p><p class="meta">${esc(t('learn.agentHint'))}</p>` : ''}
+    <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('learn.deleteDeck'))}</button></p>`;
+}
+function importCards(deckId) {
+  const k = deckOf(deckId); if (!k) return;
+  modal(t('learn.importTitle', {name: k.name}), `<p class="meta" style="margin-top:0">${esc(t('learn.importHint'))}</p>
+    <textarea id="importText" class="import-text" spellcheck="false" placeholder="${esc(t('learn.importPh'))}"></textarea>
+    <div class="import-foot"><span class="meta" id="importCount">${esc(t('learn.importN', {n: 0}))}</span><button class="btn-sm primary" data-import-go="${k.id}">${esc(t('learn.importGo'))}</button></div>`);
+  setTimeout(() => $('#importText') && $('#importText').focus(), 0);
+}
+function addCards(deckId, list) {
+  const k = deckOf(deckId); if (!k || !list.length) return 0;
+  const have = new Set(k.cards.map(c => normAnswer(c.front) + '\n' + normAnswer(c.back)));
+  const fresh = list.filter(c => !have.has(normAnswer(c.front) + '\n' + normAnswer(c.back))).map(c => newCard(c.front, c.back));
+  if (fresh.length) change(() => { k.cards.push(...fresh); });
+  return fresh.length;
+}
+$('#modalBody').addEventListener('input', e => { if (e.target.id === 'importText') $('#importCount').textContent = t('learn.importN', {n: parseCards(e.target.value).length}); });
+$('#modalBody').addEventListener('click', e => {
+  const b = e.target.closest('[data-import-go]'); if (!b) return;
+  const list = parseCards($('#importText').value);
+  if (!list.length) { toast(t('learn.importNone')); return; }
+  const n = addCards(b.dataset.importGo, list);
+  closeModal(); toast(t('learn.imported', {n, skip: list.length - n}));
+});
+/* Cards from Claude (Agent Studio): about the deck's topic, the exam's topics and notes, or your notes in the work folder. */
+function agentCards(k) {
+  const ev = eventOf(k.event), s = subj(k.subject), work = window.Shared && (Shared.values || {}).workFolder;
+  const about = [k.name, s ? s.name : '', ev ? [ev.title, (ev.topics || []).map(x => x.text).join(', '), (ev.notes || '').slice(0, 400)].filter(Boolean).join(' · ') : ''].filter(Boolean).join(' — ');
+  const task = t(k.kind === 'vocab' ? 'learn.agentVocab' : 'learn.agentTask', {about, a: k.a || t('learn.langA'), b: k.b || t('learn.langB'), have: k.cards.slice(0, 60).map(c => c.front).join('; ') || '—'})
+    + (work ? '\n' + t('learn.agentWork') : '');
+  AgentLink.send({title: t('learn.agentTitle', {name: k.name}), dir: work || '',
+    presets: [{label: t('learn.agent'), task, level: 'read', format: `{"deck": "${k.id}", "cards": [{"front": "…", "back": "…"}]}`}]});
+}
+/* Cards Claude sent back (studio-result block): {deck, cards: [{front, back}]}. */
+function agentCardList(r) {
+  const x = r && r.data; if (!x || typeof x !== 'object' || !Array.isArray(x.cards)) return null;
+  const cards = x.cards.filter(c => c && c.front && c.back).map(c => ({front: String(c.front).trim(), back: String(c.back).trim()}));
+  return cards.length ? {deck: String(x.deck || ''), cards} : null;
+}
+function agentTakeCards(r) {
+  const x = agentCardList(r); if (!x) return false;
+  let k = deckOf(x.deck) || decks().find(d => d.name.toLowerCase() === x.deck.toLowerCase());
+  if (!k) k = newDeck({name: String(r.title || t('learn.newDeck')).slice(0, 80)});
+  const n = addCards(k.id, x.cards);
+  toast(t('learn.imported', {n, skip: x.cards.length - n}));
+  openDeck(k.id);
+}
+view.addEventListener('click', e => {
+  if (settings.view !== 'learn' && settings.view !== 'today') return;
+  const dr = e.target.closest('[data-dr]');
+  if (dr && drill) {
+    const a = dr.dataset.dr;
+    if (a === 'show') { drill.shown = true; renderView(); }
+    else if (a === 'yes' || a === 'no') drillAnswer(a === 'yes');
+    else if (a === 'check') drillCheck();
+    else if (a === 'dunno') { drill.typed = ''; drill.result = 'wrong'; renderView(); }
+    else if (a === 'override') { drill.result = 'right'; drillAnswer(true); }
+    else if (a === 'next') drillAnswer(drill.result !== 'wrong');
+    else if (a === 'stop') stopDrill();
+    else if (a === 'retry') startDrill(drill.deck, true, [...drill.wrongIds]);
+    else if (a === 'close') { drill = null; renderAll(); }
+    return;
+  }
+  const pk = e.target.closest('[data-pick]');
+  if (pk && drill) { drillPick(+pk.dataset.pick); return; }
+  const go = e.target.closest('[data-learn]');
+  if (go) { startDrill(go.dataset.learn); return; }
+  const all = e.target.closest('[data-learn-all]');
+  if (all) { startDrill(all.dataset.learnAll, true); return; }
+  if (e.target.closest('[data-deck-back]')) { openDeck(''); return; }
+  if (e.target.closest('[data-deck-import]')) { importCards(settings.learnDeck); return; }
+  const del = e.target.closest('[data-card-del]');
+  if (del) { const k = deckOf(settings.learnDeck); if (k) change(() => { k.cards = k.cards.filter(c => c.id !== del.dataset.cardDel); }); return; }
+  const dk = e.target.closest('[data-deck]');
+  if (dk && !e.target.closest('input,select')) openDeck(dk.dataset.deck);
+});
+view.addEventListener('change', e => {
+  if (settings.view !== 'learn') return;
+  if (e.target.dataset.lset) { settings[e.target.dataset.lset] = e.target.value; saveSettings(); return; }
+  if (e.target.id === 'qKind') { settings.learnKind = e.target.value; saveSettings(); return; }
+  if (e.target.dataset.card) {
+    // Card text saves without redrawing the list, so Tab goes on to the next field.
+    const k = deckOf(settings.learnDeck), c = k && k.cards.find(x => x.id === e.target.dataset.card), v = e.target.value.trim();
+    if (!c || !v || v === c[e.target.dataset.side]) { if (c && !v) e.target.value = c[e.target.dataset.side]; return; }
+    hist.back.push(JSON.stringify(plan)); hist.fwd = [];
+    c[e.target.dataset.side] = v.slice(0, 1000); persist();
+  }
+});
+view.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.dataset.card) { e.preventDefault(); e.target.blur(); }
+});
+$('#details').addEventListener('click', e => {
+  const od = e.target.closest('[data-open-deck]');
+  if (od) { openDeck(od.dataset.openDeck); return; }
+  const nf = e.target.closest('[data-deck-for]'), ev = nf && eventOf(nf.dataset.deckFor);
+  if (ev) { newDeck({name: [ev.title || t('type.' + ev.type), (subj(ev.subject) || {}).name].filter(Boolean).join(' · '), subject: ev.subject || '', event: ev.id}); return; }
+  if (!sel || sel.kind !== 'deck') return;
+  const k = deckOf(sel.id); if (!k) return;
+  if (e.target.closest('[data-deck-import]')) importCards(k.id);
+  else if (e.target.closest('[data-deck-export]')) exportText(`${k.name}.txt`, t('learn.textFile'), 'txt', k.cards.map(c => `${c.front.replace(/[\t\n]/g, ' ')}\t${c.back.replace(/[\t\n]/g, ' ')}`).join('\n') + '\n', 'text/plain');
+  else if (e.target.closest('[data-deck-agent]')) agentCards(k);
+  else if (e.target.closest('[data-deck-reset]')) ask(t('learn.resetAsk', {name: k.name})).then(ok => ok && change(() => { k.cards.forEach(c => { c.box = 0; c.due = ''; }); }));
+});
 
 const A = {
   agentOpen: () => window.AgentLink && AgentLink.open(),
@@ -1416,6 +1800,8 @@ const A = {
   importPlan: () => importPlan(), exportBackup, exportIcs, print,
   undo, redo, deleteSel,
   viewToday: () => setView('today'), viewWeek: () => setView('week'), viewTasks: () => setView('tasks'), viewEvents: () => setView('events'), viewSubjects: () => setView('subjects'), viewGrades: () => setView('grades'),
+  viewLearn: () => { if (settings.view === 'learn' && !drill) settings.learnDeck = ''; setView('learn'); },
+  newDeck: () => { openDeck(''); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
   newGrade: () => { setView('grades'); setTimeout(() => $('#qSubject') && $('#qSubject').focus(), 0); }, gradeSettings: () => openSettings('grades'),
   togglePanels: () => { settings.dock = !settings.dock; applySettings(); },
   toggleAutoHide: () => { settings.autoHide = !settings.autoHide; applySettings(); },
@@ -1429,6 +1815,7 @@ const A = {
       const rows = items.filter(it => Array.isArray(it) && it[1]);
       if (rows.length) h += `<h4>${esc(t('menu.' + m))}</h4><table>` + rows.map(it => `<tr><td>${esc(t('a.' + it[0]))}</td><td><kbd>${esc(fmtKey(it[1]))}</kbd></td></tr>`).join('') + '</table>';
     });
+    h += `<h4>${esc(t('view.learn'))}</h4><table>${[['learn.k.show', t('learn.space')], ['learn.k.yesno', '1 / 2'], ['learn.k.pick', '1–4'], ['learn.k.next', 'Enter'], ['learn.k.stop', 'Esc']].map(([k, key]) => `<tr><td>${esc(t(k))}</td><td><kbd>${esc(key)}</kbd></td></tr>`).join('')}</table>`;
     h += `<h4>${esc(t('a.viewWeek'))}</h4><table><tr><td>${esc(t('ed.move'))}</td><td><kbd>← ↑ → ↓</kbd></td></tr><tr><td>${esc(t('ui.clearCell'))}</td><td><kbd>${esc(fmtKey('Delete'))}</kbd></td></tr></table>`;
     modal(t('a.shortcuts'), h);
   },
@@ -1441,9 +1828,9 @@ const A = {
 const MENUS = [
   ['file', [['importPlan', 'Ctrl+O'], ['exportBackup', 'Ctrl+S'], '-', ['exportIcs', 'Ctrl+E'], ['print', 'Ctrl+P']]],
   ['edit', [['undo', 'Ctrl+Z', null, false, ['Ctrl+Shift+Z']], ['redo', 'Ctrl+Y'], '-', ['deleteSel', 'Delete', null, true]]],
-  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newSubject'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
+  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newDeck', 'Ctrl+L'], ['newSubject'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
   ['view', [['viewToday', 'Alt+1', () => settings.view === 'today'], ['viewWeek', 'Alt+2', () => settings.view === 'week'], ['viewTasks', 'Alt+3', () => settings.view === 'tasks'],
-    ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], ['viewGrades', 'Alt+6', () => settings.view === 'grades'], '-',
+    ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], ['viewGrades', 'Alt+6', () => settings.view === 'grades'], ['viewLearn', 'Alt+7', () => settings.view === 'learn'], '-',
     ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
   ['settings', [['settings', 'Ctrl+,'], '-', '#menu.language',
     ['langAuto', null, () => settings.lang === 'auto'], ['langEn', null, () => settings.lang === 'en'], ['langDe', null, () => settings.lang === 'de'],
@@ -1500,6 +1887,7 @@ const ICONS = {
   events: SV('<path d="M12 2 3 6v6c0 5 4 9 9 10 5-1 9-5 9-10V6z"/><path d="m9 12 2 2 4-4"/>'),
   subjects: SV('<path d="M4 19V5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h13"/>'),
   grades: SV('<path d="M4 20h16M7 16V10M12 16V5M17 16v-8"/>'),
+  learn: SV('<rect x="2.5" y="7" width="14" height="13" rx="2"/><path d="M7.5 7V5.5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3"/><path d="M6 13.5h7"/>'),
   open: SV('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
   save: SV('<path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8M7 21v-7h10v7"/>'),
   undo: SV('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>'),
@@ -1520,7 +1908,7 @@ function buildToolbars() {
   fill('#fileBtns', [['importPlan', ICONS.open], ['exportBackup', ICONS.save], ['undo', ICONS.undo], ['redo', ICONS.redo]]);
   fill('#viewBtns', [['exportIcs', ICONS.ics], ['print', ICONS.print], ['togglePanels', ICONS.panel], ['settings', ICONS.gear], ['shortcuts', ICONS.help]]);
   const tools = $('#tools'); tools.innerHTML = '';
-  [['viewToday', 'today'], ['viewWeek', 'week'], ['viewTasks', 'tasks'], ['viewEvents', 'events'], ['viewGrades', 'grades'], ['viewSubjects', 'subjects']].forEach(([a, i]) => tools.append(makeBtn(a, ICONS[i], 'view')));
+  [['viewToday', 'today'], ['viewWeek', 'week'], ['viewTasks', 'tasks'], ['viewEvents', 'events'], ['viewGrades', 'grades'], ['viewLearn', 'learn'], ['viewSubjects', 'subjects']].forEach(([a, i]) => tools.append(makeBtn(a, ICONS[i], 'view')));
   $('#ctxBar').innerHTML = '';
   $$('[data-act="togglePanels"]').forEach(b => b.classList.toggle('active', settings.dock));
   syncDisabled();
@@ -1851,6 +2239,8 @@ function comboOf(e) {
 const typing = () => { const a = document.activeElement; return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable); };
 window.addEventListener('keydown', e => {
   if (window.Shortcuts && Shortcuts.recording) return;
+  if (drillKey(e)) return;
+  if (drill && !drill.done && settings.view === 'learn' && !typing() && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); return; }
   if (e.key === 'Escape') {
     if ($('#modal').classList.contains('show')) closeModal();
     else if (menuOpen) closeMenus();
@@ -1884,7 +2274,7 @@ window.addEventListener('keydown', e => {
 }
 
 /* Test hook (like Md's __md / Dt's __dt). */
-window.__pl = {get plan() { return plan; }, get sel() { return sel; }, A, run, nextLesson, setView, change, agentEntries};
+window.__pl = {get plan() { return plan; }, get sel() { return sel; }, get drill() { return drill; }, A, run, nextLesson, setView, change, agentEntries, checkAnswer, parseCards, startDrill, drillAnswer, agentCardList, agentTakeCards};
 
 /* ================= Boot ================= */
 (async function boot() {

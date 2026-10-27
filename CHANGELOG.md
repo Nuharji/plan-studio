@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.0 — 2026-10-27
+- New: Learn (Alt+7, Plan → New card deck Ctrl+L) — flashcards and vocabulary in decks, each with a subject and, if you
+  like, the exam it is for. Add cards with front and back (Enter moves on), edit them right in the list, paste a whole
+  list (one card per line, split by a tab, " = ", " - ", ";" or ":") or save a deck as text.
+- Three ways to practise: turn over (Space, then 1 / 2), type the answer (Enter checks; case, punctuation, parts in
+  brackets, "to" before verbs and ä/ae, ß/ss don't matter, one typo in a longer word counts; "I was right" if it was)
+  and pick one of four (1–4). Direction front → back, back → front or mixed.
+- Leitner boxes: a card you knew comes back after 1, 2, 4, 8, 16 days, one you didn't goes back to box 1 and comes
+  again in the same round. "Learn due cards" (at most 40 a round) or "Practise all" (leaves progress alone); at the
+  end, practise the ones you missed. A round is one undo step.
+- Due cards show in Today ("Cards to review"); the minutes practised count as learned for the subject (and the exam).
+  An exam's details list its decks and make a new one for it.
+- Let Claude make cards (needs Agent Studio): from the deck's topic, the exam's topics and notes, or your notes in the
+  work folder; "Take N cards" on the card at the bottom right adds them (without duplicates).
+
 ## 1.1.0 — 2026-10-24
 - New: Agent Studio card in Today (when Agent Studio is used on this computer): what needs you, what runs and what
   Claude did for you today, with a button to open Agent Studio.

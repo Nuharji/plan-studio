@@ -25,6 +25,11 @@ and controls as the other Studio apps.
   of open choices
 - **Study planner:** topics to tick off per exam, test or presentation, a study plan spread over the days before it
   (minutes per day, other exams included, after school), "Study today" with a study timer and minutes learned per subject
+- **Learn:** flashcards and vocabulary in decks (per subject, and for an exam if you like): type them in, paste a list
+  (from Excel, Quizlet, a vocabulary list) or let Claude make them through Agent Studio. Practise by turning over, typing
+  the answer (small typos and umlaut spellings count) or picking one of four, in either direction; the Leitner system
+  brings back what you didn't know soon and what you know rarely. Due cards show in Today, the minutes practised count
+  as learned for the subject
 - **Grades:** grades per subject in your school's system (1–6 with tendencies, 0–15 points or percent), categories with
   weights (also per subject), grades that count more or less, weighted averages per subject and overall, filter by term,
   "Which grade do I need?" and "Enter grade" right from an exam
