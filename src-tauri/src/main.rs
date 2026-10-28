@@ -204,6 +204,18 @@ fn context_menu(app: AppHandle, window: tauri::Window, items: Vec<MenuEntry>) ->
     window.popup_menu(&menu).map_err(|e| e.to_string())
 }
 
+/// A system notification (study reminder); the text is cut to a sensible length.
+#[tauri::command]
+fn notify(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    let (title, body) = notice_text(&title, &body);
+    app.notification().builder().title(title).body(body).show().map_err(|e| e.to_string())
+}
+
+fn notice_text(title: &str, body: &str) -> (String, String) {
+    (title.trim().chars().take(80).collect(), body.trim().chars().take(240).collect())
+}
+
 #[tauri::command]
 fn clipboard_read(app: AppHandle) -> String {
     app.clipboard().read_text().unwrap_or_default()
@@ -220,6 +232,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .on_menu_event(|app, event| {
             let _ = app.emit("context-menu", event.id().as_ref());
         })
@@ -254,7 +267,8 @@ fn main() {
             initial_files,
             context_menu,
             clipboard_read,
-            clipboard_write
+            clipboard_write,
+            notify
         ])
         .build(tauri::generate_context!())
         .expect("error while building Plan Studio");
@@ -287,6 +301,13 @@ mod tests {
         assert!(en.len() > 80);
         assert!(en.keys().all(|k| de.contains_key(k)), "every English text has a German one");
         assert!(de.keys().all(|k| en.contains_key(k)), "every German text has an English one");
+    }
+
+    #[test]
+    fn notice_text_is_trimmed_and_cut() {
+        let (t, b) = notice_text("  12 Karteikarten fällig ", &"ä".repeat(300));
+        assert_eq!(t, "12 Karteikarten fällig");
+        assert_eq!(b.chars().count(), 240);
     }
 
     #[test]

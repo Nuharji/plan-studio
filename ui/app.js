@@ -288,7 +288,7 @@ function persist() {
    iPhone / iPad). Both get the dates, open homework (if chosen) and the timetable of the next weeks (if chosen), and
    are brought up to date after every change. */
 let feedUrl = '', icloud = {connected: false, user: '', last_sync: 0}, icloudBusy = false, icloudT = 0, icloudErr = '';
-const calendarPayload = () => ({plan: {...plan, calendars: undefined, calCache: undefined, decks: undefined,
+const calendarPayload = () => ({plan: {...plan, calendars: undefined, calCache: undefined, decks: undefined, deckFolders: undefined,
   lessonEvents: [...(settings.icsWeeks > 0 ? lessonOccurrences(settings.icsWeeks) : []), ...studyEvents()]}, lang, tasks: !!settings.icsTasks});
 /* Study sessions as calendar entries (when chosen in Settings → Study). */
 const studyEvents = () => !studyCfg().inCalendar ? [] : sessions().filter(x => !x.done && x.date >= today()).map(x => {
@@ -419,7 +419,7 @@ const SCALES = {g16: {min: 1, max: 6, best: 1}, p15: {min: 0, max: 15, best: 15}
    (at most so many minutes a day, other exams included), each session after school. Sessions show in Today and the next
    7 days, can go into your calendar, and a study timer counts the minutes learned per subject. */
 const STUDY_TYPES = ['exam', 'test', 'talk'];
-const studyCfg = () => ({perDay: 60, chunk: 30, from: '16:00', work: 25, rest: 5, inCalendar: false,
+const studyCfg = () => ({perDay: 60, chunk: 30, from: '16:00', work: 25, rest: 5, inCalendar: false, remind: true, remindAt: '17:00', remindExam: 3,
   lead: {exam: 10, test: 5, talk: 7}, total: {exam: 300, test: 120, talk: 180}, ...(plan.studyCfg || {})});
 const sessions = () => plan.study || [];
 const studyLog = () => plan.studyLog || [];
@@ -1105,7 +1105,7 @@ function quickAdd() {
     $('#qFront').value = ''; $('#qBack').value = ''; $('#qFront').focus();
   } else if (settings.view === 'learn') {
     if (!title) return $('#qTitle').focus();
-    newDeck({name: title, kind: $('#qKind').value, subject: $('#qSubject').value});
+    newDeck({name: title, kind: $('#qKind').value, subject: $('#qSubject').value, folder: settings.learnFolder});
   } else if (settings.view === 'subjects') {
     if (!title) return $('#qTitle').focus();
     const s = {id: uid(), name: title, short: title.slice(0, 2), color: COLORS[plan.subjects.length % COLORS.length], teacher: '', room: ''};
@@ -1187,6 +1187,11 @@ $('#details').addEventListener('change', e => {
   if (e.target.dataset.lterm) {
     const [lid, tid] = e.target.dataset.lterm.split('|'), l = plan.lessons.find(x => x.id === lid);
     if (l) change(() => { const set = new Set(l.terms || []); e.target.checked ? set.add(tid) : set.delete(tid); l.terms = terms().map(x => x.id).filter(id => set.has(id)); });
+    return;
+  }
+  if (f === 'folder' && sel && sel.kind === 'deck') {
+    const k = deckOf(sel.id), v = cleanFolder(e.target.value);
+    if (k) { change(() => { k.folder = v; }); settings.learnFolder = v; saveSettings(); }
     return;
   }
   if (!f || !sel) return;
@@ -1283,7 +1288,7 @@ function deleteSel() {
   if (sel.kind === 'deck') {
     const k = deckOf(sel.id); if (!k) return;
     if (k.cards.length && !confirm(t('learn.deleteAsk', {name: k.name, n: k.cards.length}))) return;
-    if (drill && drill.deck === k.id) drill = null;
+    if (drill && drill.decks.includes(k.id)) drill = null;
     change(() => { plan.decks = decks().filter(x => x !== k); });
     sel = null; renderAll(); return;
   }
@@ -1428,6 +1433,77 @@ const BOX_DAYS = [0, 1, 2, 4, 8, 16];
 const DRILL_MODES = ['flip', 'write', 'choice'], DRILL_DIRS = ['ab', 'ba', 'mix'];
 const decks = () => plan.decks || [];
 const deckOf = id => decks().find(x => x.id === id);
+/* Folders: a deck's folder is a path like "Englisch/Unit 3" (subfolders split by "/"); folders without decks are kept
+   in plan.deckFolders. Deleting a folder never deletes decks — they move up to the folder above. */
+const cleanFolder = p => String(p || '').split('/').map(x => x.trim().slice(0, 60)).filter(Boolean).join('/');
+const folderOf = k => cleanFolder(k.folder);
+const folderName = p => p.split('/').pop();
+const folderParent = p => p.split('/').slice(0, -1).join('/');
+const inFolder = (p, f) => !f || p === f || p.startsWith(f + '/');
+function allFolders() {
+  const set = new Set();
+  for (const p of [...(plan.deckFolders || []), ...decks().map(folderOf)].map(cleanFolder)) {
+    const parts = p ? p.split('/') : [];
+    parts.forEach((_, i) => set.add(parts.slice(0, i + 1).join('/')));
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base', numeric: true}));
+}
+const subFolders = f => allFolders().filter(p => folderParent(p) === f);
+const decksIn = (f, deep = false) => decks().filter(k => deep ? inFolder(folderOf(k), f) : folderOf(k) === f);
+const FOLDER_ICON = '<svg class="ico-f" viewBox="0 0 24 24"><path d="M3 6.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+/* Moves a deck into a folder ('' = no folder). */
+function moveDeck(id, f) {
+  const k = deckOf(id); f = cleanFolder(f); if (!k || folderOf(k) === f) return;
+  change(() => { k.folder = f; });
+  toast(t('learn.moved', {name: k.name, folder: f ? folderName(f) : t('learn.allDecks')}));
+}
+/* A new folder inside the one shown. */
+function newFolder(parent = settings.learnFolder || '') {
+  askName(t('learn.newFolder'), '', name => {
+    const p = cleanFolder((parent ? parent + '/' : '') + name.replace(/\//g, '-'));
+    if (!p) return;
+    if (!allFolders().includes(p)) change(() => { plan.deckFolders = [...(plan.deckFolders || []), p]; });
+    settings.learnFolder = p; settings.learnDeck = ''; saveSettings(); renderAll();
+  });
+}
+/* Renaming a folder renames it in the path of every deck and subfolder in it. */
+function renameFolder(f) {
+  askName(t('learn.renameFolder'), folderName(f), name => {
+    const to = cleanFolder((folderParent(f) ? folderParent(f) + '/' : '') + name.replace(/\//g, '-'));
+    if (!to || to === f) return;
+    const swap = p => p === f ? to : p.startsWith(f + '/') ? to + p.slice(f.length) : p;
+    settings.learnFolder = swap(settings.learnFolder || ''); saveSettings();   // before redrawing, which drops unknown folders
+    change(() => {
+      decks().forEach(k => { if (inFolder(folderOf(k), f)) k.folder = swap(folderOf(k)); });
+      plan.deckFolders = [...new Set((plan.deckFolders || []).map(cleanFolder).map(swap))];
+    });
+  });
+}
+/* Deleting a folder keeps its decks: they (and its subfolders) move up one level. */
+function deleteFolder(f) {
+  const up = folderParent(f), n = decksIn(f, true).length;
+  const go = () => {
+    const lift = p => p === f ? up : p.startsWith(f + '/') ? cleanFolder((up ? up + '/' : '') + p.slice(f.length + 1)) : p;
+    if (inFolder(settings.learnFolder || '', f)) { settings.learnFolder = up; saveSettings(); }
+    change(() => {
+      decks().forEach(k => { if (inFolder(folderOf(k), f)) k.folder = lift(folderOf(k)); });
+      plan.deckFolders = [...new Set((plan.deckFolders || []).map(cleanFolder).filter(p => p !== f).map(lift).filter(Boolean))];
+    });
+  };
+  if (!n) return go();
+  ask(t('learn.deleteFolderAsk', {name: folderName(f), n, up: up ? folderName(up) : t('learn.allDecks')})).then(ok => ok && go());
+}
+/* A small window asking for a name (Enter takes it). */
+function askName(title, value, done) {
+  modal(title, `<div class="ed-field"><input class="field-in" id="nameIn" value="${esc(value)}" placeholder="${esc(t('learn.folderPh'))}" style="width:100%"></div>
+    <div class="import-foot"><span></span><button class="btn-sm primary" id="nameOk">${esc(t('learn.nameOk'))}</button></div>`);
+  const inp = $('#nameIn'), ok = () => { const v = inp.value.trim(); if (!v) return inp.focus(); closeModal(); done(v); };
+  $('#nameOk').onclick = ok;
+  inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); ok(); } };
+  setTimeout(() => { inp.focus(); inp.select(); }, 0);
+}
+/* The decks a drill target means: one deck (its id) or a folder with its subfolders ({folder}). */
+const targetDecks = x => x && typeof x === 'object' ? decksIn(x.folder, true) : [deckOf(x)].filter(Boolean);
 const cardDue = (c, d = today()) => !c.due || c.due <= d;
 const dueCards = (k, d = today()) => k.cards.filter(c => cardDue(c, d));
 const knownCards = k => k.cards.filter(c => (c.box || 0) >= 4).length;
@@ -1464,13 +1540,14 @@ function parseCards(text) {
 const newCard = (front, back) => ({id: uid(), front: String(front).slice(0, 1000), back: String(back).slice(0, 1000), box: 0, due: '', right: 0, wrong: 0});
 function newDeck(x = {}) {
   const k = {id: uid(), name: x.name || t('learn.newDeck'), kind: x.kind || 'cards', subject: x.subject || '', event: x.event || '',
-    a: x.kind === 'vocab' ? t('learn.defA') : '', b: x.kind === 'vocab' ? t('learn.defB') : '', cards: []};
+    a: x.kind === 'vocab' ? t('learn.defA') : '', b: x.kind === 'vocab' ? t('learn.defB') : '', folder: cleanFolder(x.folder), cards: []};
   change(() => { plan.decks = [...decks(), k]; });
   openDeck(k.id);
   return k;
 }
 function openDeck(id) {
   settings.learnDeck = id || ''; settings.view = 'learn'; drill = null;
+  if (id && deckOf(id)) settings.learnFolder = folderOf(deckOf(id));   // "back" goes to the deck's folder
   if (id) { sel = {kind: 'deck', id}; showDetails(); } else { if (sel && sel.kind === 'deck') sel = null; saveSettings(); }
   renderAll();
   if (id) setTimeout(() => $('#qFront') && $('#qFront').focus(), 0);
@@ -1483,33 +1560,75 @@ function boxBar(k) {
 const boxDots = c => `<span class="boxdots" title="${esc(t('learn.boxN', {n: c.box || 0}))}">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= (c.box || 0) ? 'on' : ''}"></i>`).join('')}</span>`;
 function deckRow(k, d = today()) {
   const due = dueCards(k, d).length;
-  return `<div class="row" data-deck="${k.id}">${chip(subj(k.subject))}<span class="grow">${esc(k.name)}</span>
+  return `<div class="row" data-deck="${k.id}">${chip(subj(k.subject))}<span class="grow">${folderOf(k) ? `<span class="meta">${esc(folderOf(k).replace(/\//g, ' › '))} › </span>` : ''}${esc(k.name)}</span>
     <span class="meta">${esc(t('learn.nDue', {n: due}))}</span>${due ? `<button class="btn-sm" data-learn="${k.id}">${esc(t('learn.go'))}</button>` : ''}</div>`;
 }
 /* Today: the decks with cards to repeat. */
 function learnCard(d) {
   const list = decks().filter(k => dueCards(k, d).length && k.cards.length);
   if (!list.length) return '';
-  return `<div class="pcard"><h2>${esc(t('learn.today'))}<button class="btn-sm" data-act="viewLearn">${esc(t('learn.all'))}</button></h2>${list.map(k => deckRow(k, d)).join('')}</div>`;
+  const later = studyCfg().remind && settings.remindedOn === d && d === today();
+  return `<div class="pcard"><h2>${esc(t('learn.today'))}<span>${later ? `<button class="btn-sm" data-remind-later title="${esc(t('remind.laterHint'))}">${esc(t('remind.later'))}</button> ` : ''}<button class="btn-sm" data-act="viewLearn">${esc(t('learn.all'))}</button></span></h2>${list.map(k => deckRow(k, d)).join('')}</div>`;
 }
+
+/* ----- Study reminders ----- */
+/* Once a day at the chosen time (or when the app is started later that day) a notification says which decks have cards
+   due, and which decks are for an exam in the next days and not known yet. Decks can be left out ("Remind me" in their
+   details). "Later" in Today asks again in an hour. The reminder needs the app to be running (also minimised). */
+function remindInfo(d = today()) {
+  const cfg = studyCfg(), on = decks().filter(k => k.remind !== false && k.cards.length);
+  const due = on.map(k => ({k, n: dueCards(k, d).length})).filter(x => x.n).sort((a, b) => b.n - a.n);
+  const exams = cfg.remindExam ? on.map(k => ({k, ev: eventOf(k.event)})).filter(x => x.ev && validIso(x.ev.date) && x.ev.date >= d && dayDiff(d, x.ev.date) <= cfg.remindExam && knownCards(x.k) < x.k.cards.length)
+    .sort((a, b) => a.ev.date.localeCompare(b.ev.date)) : [];
+  return {due, exams, n: due.reduce((m, x) => m + x.n, 0)};
+}
+function remindText(r) {
+  const names = r.due.slice(0, 3).map(x => `${x.k.name} (${x.n})`).join(', ') + (r.due.length > 3 ? ' …' : '');
+  const ex = [...new Map(r.exams.map(x => [x.ev.id, x.ev])).values()].slice(0, 2).map(ev => t('remind.examLine', {what: ev.title || t('type.' + ev.type), subject: (subj(ev.subject) || {}).name || '', when: relDay(ev.date)}).replace(/\s+/g, ' ').trim());
+  return {title: r.n ? t(r.n === 1 ? 'remind.title1' : 'remind.title', {n: r.n}) : t('remind.titleExam'), body: [r.n ? names : '', ...ex].filter(Boolean).join('\n')};
+}
+function notify(title, body) {
+  toast(title);
+  if (invoke) invoke('notify', {title, body}).catch(() => {});
+  else if (window.Notification && Notification.permission === 'granted') try { new Notification(title, {body}); } catch (e) {}
+}
+function checkRemind(now = new Date()) {
+  const cfg = studyCfg(); if (!booted || !plan || !cfg.remind) return false;
+  const d = today();
+  if (settings.remindedOn === d) return false;
+  if (settings.remindSnooze ? now.getTime() < settings.remindSnooze : now.getHours() * 60 + now.getMinutes() < minutesOf(cfg.remindAt)) return false;
+  const r = remindInfo(d);
+  if (!r.n && !r.exams.length) return false;
+  settings.remindedOn = d; settings.remindSnooze = 0; saveSettings();
+  const m = remindText(r); notify(m.title, m.body);
+  if (settings.view === 'today' && !typing()) renderView();
+  return true;
+}
+function snoozeRemind() { settings.remindedOn = ''; settings.remindSnooze = Date.now() + 3600 * 1000; saveSettings(); toast(t('remind.snoozed')); renderView(); }
 
 /* ----- A practice round ----- */
 let drill = null;
-function startDrill(deckId, all = false, ids = null) {
-  const k = deckOf(deckId); if (!k) return;
-  let list = ids ? k.cards.filter(c => ids.includes(c.id)) : all ? k.cards.slice() : dueCards(k);
-  if (!list.length) { toast(t(k.cards.length ? 'learn.nothingDue' : 'learn.noCards')); return; }
+function startDrill(target, all = false, ids = null) {
+  const ks = targetDecks(target); if (!ks.length) return;
+  const cards = ks.flatMap(k => k.cards);
+  let list = ids ? cards.filter(c => ids.includes(c.id)) : all ? cards.slice() : ks.flatMap(k => dueCards(k));
+  if (!list.length) { toast(t(cards.length ? 'learn.nothingDue' : ks.length > 1 || typeof target === 'object' ? 'learn.noCardsFolder' : 'learn.noCards')); return; }
   // Due cards: the ones already learning first, then new ones; at most 40 per round.
   list = ids || all ? shuffle(list) : [...shuffle(list.filter(c => c.box)), ...shuffle(list.filter(c => !c.box))].slice(0, 40);
   let mode = DRILL_MODES.includes(settings.learnMode) ? settings.learnMode : 'flip';
-  if (mode === 'choice' && new Set(k.cards.map(c => normAnswer(c.back))).size < 3) { mode = 'flip'; toast(t('learn.choiceFew')); }
-  drill = {deck: k.id, all: all || !!ids, mode, dir: DRILL_DIRS.includes(settings.learnDir) ? settings.learnDir : 'ab', queue: list.map(c => c.id), pos: 0,
-    seen: new Set(), again: {}, wrongIds: new Set(), right: 0, wrong: 0, started: Date.now(), snap: false, done: false};
-  settings.view = 'learn'; settings.learnDeck = k.id; saveSettings();
+  if (mode === 'choice' && new Set(cards.map(c => normAnswer(c.back))).size < 3) { mode = 'flip'; toast(t('learn.choiceFew')); }
+  const of = {}; ks.forEach(k => k.cards.forEach(c => { of[c.id] = k.id; }));
+  drill = {target, decks: ks.map(k => k.id), of, all: all || !!ids, mode, dir: DRILL_DIRS.includes(settings.learnDir) ? settings.learnDir : 'ab', queue: list.map(c => c.id), pos: 0,
+    seen: new Set(), seenBy: {}, again: {}, wrongIds: new Set(), right: 0, wrong: 0, started: Date.now(), snap: false, done: false};
+  settings.view = 'learn';
+  if (typeof target === 'object') { settings.learnDeck = ''; settings.learnFolder = target.folder; } else settings.learnDeck = target;
+  saveSettings();
   prepCard(); renderAll();
 }
-const drillDeck = () => drill && deckOf(drill.deck);
-const drillCard = () => { const k = drillDeck(); return k && k.cards.find(c => c.id === drill.queue[drill.pos]); };
+const drillFolder = () => drill && typeof drill.target === 'object';
+/* The deck of the card being asked (in a folder round, the cards come from several decks). */
+const drillDeck = () => drill && deckOf(drill.of[drill.queue[drill.pos]] || drill.decks[0]);
+const drillCard = () => { const k = drill && deckOf(drill.of[drill.queue[drill.pos]]); return k && k.cards.find(c => c.id === drill.queue[drill.pos]); };
 /* Shows the next card: which side is asked, and the four answers to pick from. */
 function prepCard() {
   const k = drillDeck(), c = drillCard();
@@ -1519,7 +1638,9 @@ function prepCard() {
   drill.shown = false; drill.result = null; drill.picked = null; drill.typed = '';
   if (drill.mode === 'choice') {
     const ans = drill.rev ? c.front : c.back, seen = new Set([normAnswer(ans)]), others = [];
-    for (const o of shuffle(k.cards.filter(x => x !== c))) { const v = drill.rev ? o.front : o.back, n = normAnswer(v); if (!seen.has(n)) { seen.add(n); others.push(v); } if (others.length === 3) break; }
+    // Wrong answers from the card's own deck first, then from the other decks of the round.
+    const pool = [...shuffle(k.cards.filter(x => x !== c)), ...shuffle(drill.decks.filter(id => id !== k.id).flatMap(id => (deckOf(id) || {cards: []}).cards))];
+    for (const o of pool) { const v = drill.rev ? o.front : o.back, n = normAnswer(v); if (!seen.has(n)) { seen.add(n); others.push(v); } if (others.length === 3) break; }
     drill.opts = shuffle([ans, ...others]);
   }
 }
@@ -1529,6 +1650,7 @@ function drillAnswer(ok) {
   if (!drill.snap) { hist.back.push(JSON.stringify(plan)); if (hist.back.length > 100) hist.back.shift(); hist.fwd = []; drill.snap = true; }   // one undo step per round
   if (!drill.seen.has(c.id)) {
     drill.seen.add(c.id); ok ? drill.right++ : drill.wrong++;
+    drill.seenBy[drill.of[c.id]] = (drill.seenBy[drill.of[c.id]] || 0) + 1;
     ok ? c.right = (c.right || 0) + 1 : c.wrong = (c.wrong || 0) + 1;
     if (!drill.all) { c.box = ok ? Math.min(5, (c.box || 0) + 1) : 1; c.due = addDays(today(), BOX_DAYS[c.box]); }
     c.last = today();
@@ -1542,10 +1664,12 @@ function finishDrill() {
   if (!drill || drill.done) return;
   drill.done = true;
   drill.minutes = Math.round((Date.now() - drill.started) / 60000);
-  const k = drillDeck();
-  if (k && drill.seen.size && drill.minutes >= 1) {
+  if (drill.seen.size && drill.minutes >= 1) {
     if (!drill.snap) { hist.back.push(JSON.stringify(plan)); hist.fwd = []; drill.snap = true; }
-    plan.studyLog = [...studyLog(), {date: today(), subject: k.subject || '', event: k.event || '', minutes: drill.minutes, deck: k.id}].filter(l => l.date >= addDays(today(), -400));
+    // The time goes to the decks by how many of their cards were asked (each deck has its own subject and exam).
+    const parts = Object.entries(drill.seenBy).map(([id, n]) => [deckOf(id), Math.round(drill.minutes * n / drill.seen.size)]).filter(([k, m]) => k && m >= 1);
+    if (!parts.length) { const [id] = Object.entries(drill.seenBy).sort((a, b) => b[1] - a[1])[0] || []; if (deckOf(id)) parts.push([deckOf(id), drill.minutes]); }
+    plan.studyLog = [...studyLog(), ...parts.map(([k, m]) => ({date: today(), subject: k.subject || '', event: k.event || '', minutes: m, deck: k.id}))].filter(l => l.date >= addDays(today(), -400));
     persist();
   }
 }
@@ -1574,9 +1698,9 @@ function drillHtml() {
       <div class="fl-stats"><span class="badge ok">${esc(t('learn.nRight', {n: drill.right}))}</span><span class="badge${drill.wrong ? ' red' : ''}">${esc(t('learn.nWrong', {n: drill.wrong}))}</span>
         ${drill.minutes ? `<span class="badge">${esc(t('study.min', {n: drill.minutes}))}</span>` : ''}</div>
       ${n ? `<div class="prog"><i style="width:${Math.round(drill.right / n * 100)}%"></i></div>` : ''}
-      <div class="meta">${esc(drill.all ? t('learn.allNote') : t('learn.nextDue', {n: dueCards(k).length}))}</div></div>
+      <div class="meta">${esc(drill.all ? t('learn.allNote') : t('learn.nextDue', {n: targetDecks(drill.target).reduce((n, x) => n + dueCards(x).length, 0)}))}</div></div>
       <div class="drill-btns">${drill.wrongIds.size ? `<button class="btn-sm primary" data-dr="retry">${esc(t('learn.retry', {n: drill.wrongIds.size}))}</button>` : ''}
-        <button class="btn-sm${drill.wrongIds.size ? '' : ' primary'}" data-dr="close">${esc(t('learn.backToDeck'))} <kbd>Enter</kbd></button></div></div>`;
+        <button class="btn-sm${drill.wrongIds.size ? '' : ' primary'}" data-dr="close">${esc(t(drillFolder() ? 'learn.backToFolder' : 'learn.backToDeck'))} <kbd>Enter</kbd></button></div></div>`;
   }
   const c = drillCard(), ask = drill.rev ? c.back : c.front, ans = drill.rev ? c.front : c.back;
   const total = drill.queue.length, pr = Math.round(drill.pos / total * 100);
@@ -1598,7 +1722,7 @@ function drillHtml() {
     body = `<div class="fl-line"></div><div class="fl-side">${esc(ansSide)}</div><div class="choices">${drill.opts.map((o, i) => `<button class="choice${drill.result ? right(i) ? ' right' : i === drill.picked ? ' wrong' : '' : ''}" data-pick="${i}"${drill.result ? ' disabled' : ''}><kbd>${i + 1}</kbd><span>${esc(o)}</span></button>`).join('')}</div>`;
     btns = drill.result ? `<button class="btn-sm primary" data-dr="next">${esc(t('learn.next'))} <kbd>Enter</kbd></button>` : '';
   }
-  return `<div class="drill"><div class="drill-top"><button class="btn-sm" data-dr="stop" title="Esc">✕ ${esc(t('learn.stop'))}</button><span class="grow">${chip(subj(k.subject))} ${esc(k.name)}${drill.all ? ` · ${esc(t('learn.practiceAll'))}` : ''}</span>
+  return `<div class="drill"><div class="drill-top"><button class="btn-sm" data-dr="stop" title="Esc">✕ ${esc(t('learn.stop'))}</button><span class="grow">${drillFolder() ? `${FOLDER_ICON} ${esc(drill.target.folder ? folderName(drill.target.folder) : t('learn.allDecks'))} · ` : ''}${chip(subj(k.subject))} ${esc(k.name)}${drill.all ? ` · ${esc(t('learn.practiceAll'))}` : ''}</span>
       <span class="meta">${esc(t('learn.pos', {i: Math.min(drill.pos + 1, total), n: total}))}</span><span class="badge ok">✓ ${drill.right}</span><span class="badge red">✗ ${drill.wrong}</span></div>
     <div class="prog"><i style="width:${pr}%"></i></div>
     <div class="flash${drill.mode === 'flip' && !drill.shown ? ' turn' : ''}"${drill.mode === 'flip' && !drill.shown ? ' data-dr="show"' : ''}><div class="fl-side">${esc(askSide)}${drill.again[c.id] ? ` · ${esc(t('learn.again'))}` : ''}</div><div class="fl-q">${esc(ask)}</div>${body}</div>
@@ -1631,20 +1755,36 @@ VIEWS.learn = function () {
   const k = deckOf(settings.learnDeck), d = today();
   const modeSel = `<select data-lset="learnMode" title="${esc(t('learn.mode'))}">${DRILL_MODES.map(m => `<option value="${m}"${(settings.learnMode || 'flip') === m ? ' selected' : ''}>${esc(t('learn.m.' + m))}</option>`).join('')}</select>`;
   if (!k) {
-    const list = decks();
-    return `<div class="view-title"><h1>${esc(t('view.learn'))}</h1><span class="sub">${esc(t('learn.hint'))}</span></div>
+    if (!allFolders().includes(settings.learnFolder)) settings.learnFolder = '';
+    const f = settings.learnFolder || '', list = decksIn(f), subs = subFolders(f);
+    const deep = decksIn(f, true), fdue = deep.reduce((n, x) => n + dueCards(x, d).length, 0);
+    // Breadcrumb: All decks › Englisch › Unit 3 — each part opens that folder and takes dropped decks.
+    const parts = f ? f.split('/') : [];
+    const crumbs = `<div class="crumbs"><button class="crumb${f ? '' : ' cur'}" data-folder-go="" data-drop-folder="">${esc(t('learn.allDecks'))}</button>${parts.map((x, i) => {
+      const path = parts.slice(0, i + 1).join('/');
+      return `<span class="crumb-sep">›</span><button class="crumb${path === f ? ' cur' : ''}" data-folder-go="${esc(path)}" data-drop-folder="${esc(path)}">${esc(x)}</button>`; }).join('')}</div>`;
+    const folderCard = p => { const ks = decksIn(p, true), n = ks.reduce((m, x) => m + x.cards.length, 0), due = ks.reduce((m, x) => m + dueCards(x, d).length, 0), sf = subFolders(p).length;
+      return `<div class="pcard deck-card folder-card" data-folder-go="${esc(p)}" data-drop-folder="${esc(p)}"><h2><span>${FOLDER_ICON} ${esc(t('learn.folder'))}</span>
+          ${due && n ? `<button class="btn-sm primary" data-learn-folder="${esc(p)}">${esc(t('learn.goN', {n: Math.min(due, 40)}))}</button>` : ''}</h2>
+        <div class="deck-name">${esc(folderName(p))}</div>
+        <div class="meta">${esc([sf ? t(sf === 1 ? 'learn.nSub1' : 'learn.nSubs', {n: sf}) : '', t(ks.length === 1 ? 'learn.nDeck1' : 'learn.nDecks', {n: ks.length}), t(n === 1 ? 'learn.nCard1' : 'learn.nCards', {n}), t('learn.nDue', {n: due})].filter(Boolean).join(' · '))}</div></div>`; };
+    return `<div class="view-title"><h1>${esc(f ? folderName(f) : t('view.learn'))}</h1><span class="sub">${esc(f ? t('learn.folderHint') : t('learn.hint'))}</span></div>
+      ${allFolders().length ? crumbs : ''}
       <div class="quick"><input class="field-in title-in" id="qTitle" placeholder="${esc(t('learn.deckPh'))}">
         <select id="qKind">${['cards', 'vocab'].map(x => `<option value="${x}"${settings.learnKind === x ? ' selected' : ''}>${esc(t('learn.kind.' + x))}</option>`).join('')}</select>
-        <select id="qSubject">${subjectOptions('')}</select><button class="btn-sm primary" id="qAdd">${esc(t('learn.create'))}</button></div>
-      <div class="cards">${list.map(x => { const due = dueCards(x, d).length, ev = eventOf(x.event);
-        return `<div class="pcard deck-card" data-deck="${x.id}"><h2>${subj(x.subject) ? chip(subj(x.subject)) : `<span>${esc(t('learn.kind.' + (x.kind || 'cards')))}</span>`}
+        <select id="qSubject">${subjectOptions('')}</select><button class="btn-sm primary" id="qAdd">${esc(t('learn.create'))}</button>
+        <button class="btn-sm" data-folder-new>${FOLDER_ICON} ${esc(t('learn.newFolder'))}</button>
+        ${f ? `<button class="btn-sm" data-learn-folder="${esc(f)}"${fdue ? '' : ' disabled'}>${esc(t('learn.goFolder', {n: Math.min(fdue, 40)}))}</button>` : ''}</div>
+      <div class="cards">${subs.map(folderCard).join('')}${list.map(x => { const due = dueCards(x, d).length, ev = eventOf(x.event);
+        return `<div class="pcard deck-card" data-deck="${x.id}" draggable="true"><h2>${subj(x.subject) ? chip(subj(x.subject)) : `<span>${esc(t('learn.kind.' + (x.kind || 'cards')))}</span>`}
             ${due && x.cards.length ? `<button class="btn-sm primary" data-learn="${x.id}">${esc(t('learn.goN', {n: Math.min(due, 40)}))}</button>` : ''}</h2>
-          <div class="deck-name">${esc(x.name)}</div>
+          <div class="deck-name">${esc(x.name)}${x.remind === false ? ` <span class="meta" title="${esc(t('remind.offDeck'))}">🔕</span>` : ''}</div>
           <div class="meta">${esc(t(x.cards.length === 1 ? 'learn.nCard1' : 'learn.nCards', {n: x.cards.length}))} · ${esc(t('learn.nKnown', {n: knownCards(x)}))}${ev && validIso(ev.date) ? ` · ${esc(t('learn.forEvent', {what: ev.title || t('type.' + ev.type), when: relDay(ev.date)}))}` : ''}</div>
-          ${x.cards.length ? boxBar(x) : ''}</div>`; }).join('') || `<div class="empty-s">${esc(t('learn.none'))}</div>`}</div>`;
+          ${x.cards.length ? boxBar(x) : ''}</div>`; }).join('')}${subs.length || list.length ? '' : `<div class="empty-s">${esc(t(f ? 'learn.folderEmpty' : 'learn.none'))}</div>`}</div>
+      ${allFolders().length && list.length ? `<p class="meta">${esc(t('learn.dragHint'))}</p>` : ''}`;
   }
   const due = dueCards(k, d).length, ev = eventOf(k.event);
-  return `<div class="view-title"><button class="btn-sm" data-deck-back>‹ ${esc(t('learn.allDecks'))}</button><h1>${esc(k.name)}</h1>
+  return `<div class="view-title"><button class="btn-sm" data-deck-back>‹ ${esc(folderOf(k) ? folderName(folderOf(k)) : t('learn.allDecks'))}</button><h1>${esc(k.name)}</h1>
       <span class="sub">${chip(subj(k.subject))} ${esc(t(k.cards.length === 1 ? 'learn.nCard1' : 'learn.nCards', {n: k.cards.length}))} · ${esc(t('learn.nDue', {n: due}))} · ${esc(t('learn.nKnown', {n: knownCards(k)}))}${ev && validIso(ev.date) ? ` · ${esc(t('learn.forEvent', {what: ev.title || t('type.' + ev.type), when: relDay(ev.date)}))}` : ''}</span></div>
     <div class="quick learn-go"><button class="btn-sm primary" data-learn="${k.id}"${due && k.cards.length ? '' : ' disabled'}>${esc(t('learn.goN', {n: Math.min(due, 40)}))}</button>
       <button class="btn-sm" data-learn-all="${k.id}"${k.cards.length ? '' : ' disabled'}>${esc(t('learn.practiceAll'))}</button>
@@ -1667,6 +1807,8 @@ function deckDetails(box, field) {
     ${field('learn.kindL', `<select data-f="kind">${['cards', 'vocab'].map(x => `<option value="${x}"${(k.kind || 'cards') === x ? ' selected' : ''}>${esc(t('learn.kind.' + x))}</option>`).join('')}</select>`)}
     ${k.kind === 'vocab' ? field('learn.langs', `<div class="two"><input class="field-in" data-f="a" value="${esc(k.a || '')}" placeholder="${esc(t('learn.langA'))}"><input class="field-in" data-f="b" value="${esc(k.b || '')}" placeholder="${esc(t('learn.langB'))}"></div>`) : ''}
     ${field('ui.subject', `<select data-f="subject">${subjectOptions(k.subject)}</select>`)}
+    ${field('learn.folder', `<input class="field-in" data-f="folder" list="deckFolders" value="${esc(folderOf(k))}" placeholder="${esc(t('learn.noFolder'))}"><datalist id="deckFolders">${allFolders().map(p => `<option value="${esc(p)}">`).join('')}</datalist><div class="meta">${esc(t('learn.folderField'))}</div>`)}
+    <label class="switch"><input type="checkbox" data-f="remind"${k.remind === false ? '' : ' checked'}><span></span>${esc(t('remind.deck'))}</label>
     ${field('learn.event', `<select data-f="event"><option value="">${esc(t('learn.noEvent'))}</option>${exams.map(e => `<option value="${e.id}"${e.id === k.event ? ' selected' : ''}>${esc(`${fmtDate(e.date)} · ${t('type.' + e.type)}${(subj(e.subject) || {}).name ? ' ' + subj(e.subject).name : ''}${e.title ? ' – ' + e.title : ''}`)}</option>`).join('')}</select><div class="meta">${esc(t('learn.eventHint'))}</div>`)}
     <p class="pick-btns"><button class="btn-sm" data-deck-import>${esc(t('learn.import'))}</button><button class="btn-sm" data-deck-export${k.cards.length ? '' : ' disabled'}>${esc(t('learn.export'))}</button>
       ${k.cards.some(c => c.box) ? `<button class="btn-sm" data-deck-reset>${esc(t('learn.reset'))}</button>` : ''}</p>
@@ -1730,7 +1872,7 @@ view.addEventListener('click', e => {
     else if (a === 'override') { drill.result = 'right'; drillAnswer(true); }
     else if (a === 'next') drillAnswer(drill.result !== 'wrong');
     else if (a === 'stop') stopDrill();
-    else if (a === 'retry') startDrill(drill.deck, true, [...drill.wrongIds]);
+    else if (a === 'retry') startDrill(drill.target, true, [...drill.wrongIds]);
     else if (a === 'close') { drill = null; renderAll(); }
     return;
   }
@@ -1738,6 +1880,12 @@ view.addEventListener('click', e => {
   if (pk && drill) { drillPick(+pk.dataset.pick); return; }
   const go = e.target.closest('[data-learn]');
   if (go) { startDrill(go.dataset.learn); return; }
+  if (e.target.closest('[data-remind-later]')) { snoozeRemind(); return; }
+  const gf = e.target.closest('[data-learn-folder]');
+  if (gf) { startDrill({folder: gf.dataset.learnFolder}); return; }
+  if (e.target.closest('[data-folder-new]')) { newFolder(); return; }
+  const fo = e.target.closest('[data-folder-go]');
+  if (fo) { settings.learnFolder = fo.dataset.folderGo; settings.learnDeck = ''; if (sel && sel.kind === 'deck') sel = null; saveSettings(); renderAll(); return; }
   const all = e.target.closest('[data-learn-all]');
   if (all) { startDrill(all.dataset.learnAll, true); return; }
   if (e.target.closest('[data-deck-back]')) { openDeck(''); return; }
@@ -1761,6 +1909,24 @@ view.addEventListener('change', e => {
 });
 view.addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.dataset.card) { e.preventDefault(); e.target.blur(); }
+});
+/* Dragging a deck onto a folder (or a part of the path at the top) moves it there. */
+view.addEventListener('dragstart', e => {
+  const dk = settings.view === 'learn' && e.target.closest && e.target.closest('[data-deck][draggable]');
+  if (!dk) return;
+  e.dataTransfer.setData('text/x-deck', dk.dataset.deck); e.dataTransfer.effectAllowed = 'move'; dk.classList.add('dragging');
+});
+view.addEventListener('dragend', () => $$('#view .dragging, #view .drop-on').forEach(x => x.classList.remove('dragging', 'drop-on')));
+view.addEventListener('dragover', e => {
+  const to = e.target.closest && e.target.closest('[data-drop-folder]');
+  if (!to || !e.dataTransfer.types.includes('text/x-deck')) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  $$('#view .drop-on').forEach(x => x !== to && x.classList.remove('drop-on')); to.classList.add('drop-on');
+});
+view.addEventListener('drop', e => {
+  const to = e.target.closest && e.target.closest('[data-drop-folder]'), id = e.dataTransfer.getData('text/x-deck');
+  if (!to || !id) return;
+  e.preventDefault(); moveDeck(id, to.dataset.dropFolder);
 });
 $('#details').addEventListener('click', e => {
   const od = e.target.closest('[data-open-deck]');
@@ -1802,6 +1968,10 @@ const A = {
   viewToday: () => setView('today'), viewWeek: () => setView('week'), viewTasks: () => setView('tasks'), viewEvents: () => setView('events'), viewSubjects: () => setView('subjects'), viewGrades: () => setView('grades'),
   viewLearn: () => { if (settings.view === 'learn' && !drill) settings.learnDeck = ''; setView('learn'); },
   newDeck: () => { openDeck(''); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
+  newFolder: () => { const f = ctxFolder != null ? ctxFolder : settings.view === 'learn' && !settings.learnDeck ? settings.learnFolder || '' : ''; ctxFolder = null; if (settings.view !== 'learn' || settings.learnDeck) openDeck(''); newFolder(f); },
+  renameFolder: () => { if (ctxFolder) renameFolder(ctxFolder); ctxFolder = null; },
+  deleteFolder: () => { if (ctxFolder) deleteFolder(ctxFolder); ctxFolder = null; },
+  learnFolder: () => { if (ctxFolder) startDrill({folder: ctxFolder}); ctxFolder = null; },
   newGrade: () => { setView('grades'); setTimeout(() => $('#qSubject') && $('#qSubject').focus(), 0); }, gradeSettings: () => openSettings('grades'),
   togglePanels: () => { settings.dock = !settings.dock; applySettings(); },
   toggleAutoHide: () => { settings.autoHide = !settings.autoHide; applySettings(); },
@@ -1828,7 +1998,7 @@ const A = {
 const MENUS = [
   ['file', [['importPlan', 'Ctrl+O'], ['exportBackup', 'Ctrl+S'], '-', ['exportIcs', 'Ctrl+E'], ['print', 'Ctrl+P']]],
   ['edit', [['undo', 'Ctrl+Z', null, false, ['Ctrl+Shift+Z']], ['redo', 'Ctrl+Y'], '-', ['deleteSel', 'Delete', null, true]]],
-  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newDeck', 'Ctrl+L'], ['newSubject'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
+  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newDeck', 'Ctrl+L'], ['newFolder'], ['newSubject'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
   ['view', [['viewToday', 'Alt+1', () => settings.view === 'today'], ['viewWeek', 'Alt+2', () => settings.view === 'week'], ['viewTasks', 'Alt+3', () => settings.view === 'tasks'],
     ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], ['viewGrades', 'Alt+6', () => settings.view === 'grades'], ['viewLearn', 'Alt+7', () => settings.view === 'learn'], '-',
     ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
@@ -1917,7 +2087,7 @@ document.addEventListener('mousedown', e => { if (e.target.closest('.ibtn,.cta')
 document.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) run(b.dataset.act); });
 
 /* ================= Modal, settings ================= */
-let settingsOpen = false, prefsSection = 'general';
+let settingsOpen = false, prefsSection = 'general', ctxFolder = null;
 function modal(title, html) {
   $('.modal').classList.remove('wide'); $('#modalFoot').hidden = true; settingsOpen = false;
   $('#modalTitle').textContent = title; $('#modalBody').innerHTML = html; $('#modal').classList.add('show');
@@ -2004,7 +2174,13 @@ function renderSettings() {
           ${STUDY_TYPES.map(ty => `<label>${esc(t('type.' + ty))}</label><span>${num('lead.' + ty, c.lead[ty], 1, 60, 1)} ${esc(t('study.daysBefore'))} · ${num('total.' + ty, c.total[ty], 15, 3000, 15)} ${esc(t('study.minutes'))}</span>`).join('')}</div>
         <h3>${esc(t('study.timer'))}</h3><div class="daylen"><label>${esc(t('study.work'))}</label><span>${num('work', c.work, 5, 120)} ${esc(t('study.minutes'))}</span>
           <label>${esc(t('study.rest'))}</label><span>${num('rest', c.rest, 1, 60, 1)} ${esc(t('study.minutes'))}</span></div>
-        <label class="switch"><input type="checkbox" data-study="inCalendar"${c.inCalendar ? ' checked' : ''}><span></span>${esc(t('study.inCalendar'))}</label>`;
+        <label class="switch"><input type="checkbox" data-study="inCalendar"${c.inCalendar ? ' checked' : ''}><span></span>${esc(t('study.inCalendar'))}</label>
+        <h3>${esc(t('remind.set'))}</h3><p class="hint">${esc(t('remind.setHint'))}</p>
+        <label class="switch"><input type="checkbox" data-study="remind"${c.remind ? ' checked' : ''}><span></span>${esc(t('remind.on'))}</label>
+        ${c.remind ? `<div class="daylen"><label>${esc(t('remind.at'))}</label><input type="time" data-study="remindAt" value="${esc(c.remindAt)}">
+          <label>${esc(t('remind.exam'))}</label><select data-study="remindExam">${[0, 1, 2, 3, 5, 7].map(n => opt(n, n ? t('remind.examN', {n}) : t('remind.exam0'), c.remindExam)).join('')}</select></div>
+          <p><button class="btn-sm" data-remind-test>${esc(t('remind.test'))}</button></p>` : ''}
+        <p class="hint">${esc(t('remind.appHint'))}</p>`;
     })(),
     grades: (() => {
       const cfg = gradeCfg(), sum = cfg.cats.reduce((n, c) => n + (+c.weight || 0), 0);
@@ -2059,6 +2235,10 @@ function renderSettings() {
 }
 $('#modal').addEventListener('click', e => {
   if (!settingsOpen) return;
+  if (e.target.closest('[data-remind-test]')) {
+    const r = remindInfo(), m = r.n || r.exams.length ? remindText(r) : {title: t('remind.testTitle'), body: t('remind.testBody')};
+    notify(m.title, m.body); return;
+  }
   const bl = e.target.closest('[data-block]');
   if (bl) {
     const k = bl.dataset.block;
@@ -2130,9 +2310,11 @@ $('#modal').addEventListener('change', e => {
     renderSettings(); return;
   }
   if (d.study) {
-    const [k, sub] = d.study.split('.'), v = e.target.type === 'checkbox' ? e.target.checked : k === 'from' ? e.target.value : Math.max(1, Math.round(+e.target.value) || 1);
+    const [k, sub] = d.study.split('.'), v = e.target.type === 'checkbox' ? e.target.checked : k === 'from' || k === 'remindAt' ? e.target.value : k === 'remindExam' ? Math.max(0, +e.target.value || 0) : Math.max(1, Math.round(+e.target.value) || 1);
+    if (k === 'remindAt' && !/^\d\d:\d\d$/.test(v)) return;
     change(() => { const c = {...studyCfg()}; if (sub) c[k] = {...c[k], [sub]: v}; else c[k] = v; plan.studyCfg = c; });
     if (k === 'inCalendar') pushCalendars(true);
+    if (k === 'remind' || k === 'remindAt') { settings.remindedOn = ''; settings.remindSnooze = 0; saveSettings(); if (k === 'remind') renderSettings(); }
     return;
   }
   if (d.gcfg) {
@@ -2267,6 +2449,12 @@ window.addEventListener('keydown', e => {
       row.click();
       return [item('deleteSel')];
     }
+    const fc = e.target.closest('[data-folder-go]');
+    if (fc && settings.view === 'learn' && !drill) {
+      ctxFolder = fc.dataset.folderGo;
+      return ctxFolder ? [item('learnFolder'), null, item('newFolder'), item('renameFolder'), item('deleteFolder')] : [item('newFolder')];
+    }
+    if (settings.view === 'learn' && !drill && e.target.closest('#view')) { ctxFolder = settings.learnFolder || ''; return [item('newDeck'), item('newFolder')]; }
     if (e.target.closest('#view')) return [item('newTask'), item('newEvent'), null, item('print')];
     return null;
   });
@@ -2274,7 +2462,8 @@ window.addEventListener('keydown', e => {
 }
 
 /* Test hook (like Md's __md / Dt's __dt). */
-window.__pl = {get plan() { return plan; }, get sel() { return sel; }, get drill() { return drill; }, A, run, nextLesson, setView, change, agentEntries, checkAnswer, parseCards, startDrill, drillAnswer, agentCardList, agentTakeCards};
+window.__pl = {get plan() { return plan; }, get sel() { return sel; }, get drill() { return drill; }, get settings() { return settings; }, A, run,
+  cleanFolder, allFolders, decksIn, moveDeck, renameFolder, deleteFolder, remindInfo, remindText, checkRemind, snoozeRemind, nextLesson, setView, change, agentEntries, checkAnswer, parseCards, startDrill, drillAnswer, agentCardList, agentTakeCards};
 
 /* ================= Boot ================= */
 (async function boot() {
@@ -2307,7 +2496,8 @@ window.__pl = {get plan() { return plan; }, get sel() { return sel; }, get drill
   renderAll();
   agentInit();
   // The date changes at midnight; the current period every few minutes.
-  setInterval(() => { if (!typing()) { renderView(); updateStatus(); } }, 60000);
+  setInterval(() => { checkRemind(); if (!typing()) { renderView(); updateStatus(); } }, 60000);
+  setTimeout(() => checkRemind(), 4000);   // started after the reminder time: remind once now
   refreshCalendars();
   calendarStart();
   setInterval(() => refreshCalendars(), 30 * 60000);

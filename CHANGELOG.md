@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0 — 2026-10-28
+- New: folders for card decks (Learn). "New folder" makes one in the folder you're in; folders can hold subfolders
+  ("English/Unit 3"). The path at the top opens each level; a folder card shows its decks, cards and due cards. Drag a
+  deck onto a folder (or onto a part of the path) to move it, or set the folder in the deck's details. Right-click a
+  folder to learn, rename or remove it — removing keeps the decks, they move up a level. New decks land in the open
+  folder.
+- New: learn a whole folder at once — "Learn folder" asks the due cards of all decks in it and its subfolders (at most
+  40 a round); the minutes count for each deck's subject and exam.
+- New: study reminders (Settings → Study plan → Study reminder, on by default at 17:00). Once a day a notification says
+  how many flashcards are due and in which decks, and — a few days before (adjustable) — which decks for an exam aren't
+  known yet. Started later in the day, the app reminds you right away; "Remind me later" in Today asks again in an hour.
+  Single decks can be left out ("Remind me of this deck" in their details); "Test the reminder now" shows one. The
+  reminder needs Plan Studio to be running (minimised is fine).
+
 ## 1.2.0 — 2026-10-27
 - New: Learn (Alt+7, Plan → New card deck Ctrl+L) — flashcards and vocabulary in decks, each with a subject and, if you
   like, the exam it is for. Add cards with front and back (Enter moves on), edit them right in the list, paste a whole

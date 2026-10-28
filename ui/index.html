@@ -405,6 +405,16 @@ details.more summary{cursor:pointer;color:var(--dim);font-size:12px;margin-botto
 .row.warn-row{font-weight:600}
 /* Learn: decks, card list, practice */
 .deck-card{cursor:pointer}.deck-card:hover{border-color:var(--accent)}
+/* Folders of decks: path at the top, folder cards, dragging a deck onto a folder */
+.ico-f{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;vertical-align:-2px}
+.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:0 0 10px}
+.crumb{background:none;border:1px dashed transparent;border-radius:var(--radius);color:var(--dim);font:inherit;padding:2px 6px;cursor:pointer}
+.crumb:hover{color:var(--text);background:var(--hover)}.crumb.cur{color:var(--strong);font-weight:600}
+.crumb-sep{color:var(--dim)}
+.folder-card{border-style:dashed}.folder-card h2 span{display:flex;align-items:center;gap:5px}
+.drop-on{border-color:var(--accent)!important;background:var(--hover)}.crumb.drop-on{border-style:dashed}
+.dragging{opacity:.5}
+.pcard h2>span{display:flex;gap:6px;align-items:center}
 .deck-name{font-size:15px;font-weight:650;color:var(--strong);margin:0 0 4px;overflow-wrap:anywhere}
 .boxbar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--hover);margin-top:8px;flex:1 1 120px;min-width:80px}
 .boxbar i{display:block;height:100%}.boxbar .b-known{background:var(--ok)}.boxbar .b-learn{background:var(--accent)}.boxbar .b-new{background:var(--dim);opacity:.45}
