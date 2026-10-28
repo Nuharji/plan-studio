@@ -591,5 +591,17 @@
   "a.newFolder": "Neuer Ordner für Stapel",
   "a.renameFolder": "Ordner umbenennen …",
   "a.deleteFolder": "Ordner auflösen",
-  "a.learnFolder": "Ordner lernen"
+  "a.learnFolder": "Ordner lernen",
+  "learn.searchPh": "In allen Stapeln suchen — Vorder-/Rückseite, Stapel, Ordner ({key})",
+  "learn.searchNone": "Nichts gefunden für „{q}“.",
+  "learn.searchDecks": "Stapel ({n})",
+  "learn.searchCard1": "1 Karte",
+  "learn.searchCards": "{n} Karten in {m} Stapeln",
+  "learn.searchDrill": "Diese {n} üben",
+  "learn.searchOpen": "Im Stapel öffnen",
+  "learn.searchMore": "… und {n} weitere — tippe genauer, um sie zu sehen.",
+  "learn.searchBusy": "Erst die Übungsrunde beenden (Esc).",
+  "learn.searchFor": "Suche „{q}“",
+  "learn.backToSearch": "Zurück zur Suche",
+  "a.searchCards": "Karteikarten durchsuchen"
 }

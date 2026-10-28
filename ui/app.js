@@ -1608,7 +1608,7 @@ function snoozeRemind() { settings.remindedOn = ''; settings.remindSnooze = Date
 
 /* ----- A practice round ----- */
 let drill = null;
-function startDrill(target, all = false, ids = null) {
+function startDrill(target, all = false, ids = null, search = false) {
   const ks = targetDecks(target); if (!ks.length) return;
   const cards = ks.flatMap(k => k.cards);
   let list = ids ? cards.filter(c => ids.includes(c.id)) : all ? cards.slice() : ks.flatMap(k => dueCards(k));
@@ -1618,7 +1618,7 @@ function startDrill(target, all = false, ids = null) {
   let mode = DRILL_MODES.includes(settings.learnMode) ? settings.learnMode : 'flip';
   if (mode === 'choice' && new Set(cards.map(c => normAnswer(c.back))).size < 3) { mode = 'flip'; toast(t('learn.choiceFew')); }
   const of = {}; ks.forEach(k => k.cards.forEach(c => { of[c.id] = k.id; }));
-  drill = {target, decks: ks.map(k => k.id), of, all: all || !!ids, mode, dir: DRILL_DIRS.includes(settings.learnDir) ? settings.learnDir : 'ab', queue: list.map(c => c.id), pos: 0,
+  drill = {target, decks: ks.map(k => k.id), of, all: all || !!ids, search, mode, dir: DRILL_DIRS.includes(settings.learnDir) ? settings.learnDir : 'ab', queue: list.map(c => c.id), pos: 0,
     seen: new Set(), seenBy: {}, again: {}, wrongIds: new Set(), right: 0, wrong: 0, started: Date.now(), snap: false, done: false};
   settings.view = 'learn';
   if (typeof target === 'object') { settings.learnDeck = ''; settings.learnFolder = target.folder; } else settings.learnDeck = target;
@@ -1700,7 +1700,7 @@ function drillHtml() {
       ${n ? `<div class="prog"><i style="width:${Math.round(drill.right / n * 100)}%"></i></div>` : ''}
       <div class="meta">${esc(drill.all ? t('learn.allNote') : t('learn.nextDue', {n: targetDecks(drill.target).reduce((n, x) => n + dueCards(x).length, 0)}))}</div></div>
       <div class="drill-btns">${drill.wrongIds.size ? `<button class="btn-sm primary" data-dr="retry">${esc(t('learn.retry', {n: drill.wrongIds.size}))}</button>` : ''}
-        <button class="btn-sm${drill.wrongIds.size ? '' : ' primary'}" data-dr="close">${esc(t(drillFolder() ? 'learn.backToFolder' : 'learn.backToDeck'))} <kbd>Enter</kbd></button></div></div>`;
+        <button class="btn-sm${drill.wrongIds.size ? '' : ' primary'}" data-dr="close">${esc(t(drill.search ? 'learn.backToSearch' : drillFolder() ? 'learn.backToFolder' : 'learn.backToDeck'))} <kbd>Enter</kbd></button></div></div>`;
   }
   const c = drillCard(), ask = drill.rev ? c.back : c.front, ans = drill.rev ? c.front : c.back;
   const total = drill.queue.length, pr = Math.round(drill.pos / total * 100);
@@ -1722,7 +1722,7 @@ function drillHtml() {
     body = `<div class="fl-line"></div><div class="fl-side">${esc(ansSide)}</div><div class="choices">${drill.opts.map((o, i) => `<button class="choice${drill.result ? right(i) ? ' right' : i === drill.picked ? ' wrong' : '' : ''}" data-pick="${i}"${drill.result ? ' disabled' : ''}><kbd>${i + 1}</kbd><span>${esc(o)}</span></button>`).join('')}</div>`;
     btns = drill.result ? `<button class="btn-sm primary" data-dr="next">${esc(t('learn.next'))} <kbd>Enter</kbd></button>` : '';
   }
-  return `<div class="drill"><div class="drill-top"><button class="btn-sm" data-dr="stop" title="Esc">✕ ${esc(t('learn.stop'))}</button><span class="grow">${drillFolder() ? `${FOLDER_ICON} ${esc(drill.target.folder ? folderName(drill.target.folder) : t('learn.allDecks'))} · ` : ''}${chip(subj(k.subject))} ${esc(k.name)}${drill.all ? ` · ${esc(t('learn.practiceAll'))}` : ''}</span>
+  return `<div class="drill"><div class="drill-top"><button class="btn-sm" data-dr="stop" title="Esc">✕ ${esc(t('learn.stop'))}</button><span class="grow">${drill.search ? `${esc(t('learn.searchFor', {q: learnQuery.trim()}))} · ` : drillFolder() ? `${FOLDER_ICON} ${esc(drill.target.folder ? folderName(drill.target.folder) : t('learn.allDecks'))} · ` : ''}${chip(subj(k.subject))} ${esc(k.name)}${drill.all ? ` · ${esc(t('learn.practiceAll'))}` : ''}</span>
       <span class="meta">${esc(t('learn.pos', {i: Math.min(drill.pos + 1, total), n: total}))}</span><span class="badge ok">✓ ${drill.right}</span><span class="badge red">✗ ${drill.wrong}</span></div>
     <div class="prog"><i style="width:${pr}%"></i></div>
     <div class="flash${drill.mode === 'flip' && !drill.shown ? ' turn' : ''}"${drill.mode === 'flip' && !drill.shown ? ' data-dr="show"' : ''}><div class="fl-side">${esc(askSide)}${drill.again[c.id] ? ` · ${esc(t('learn.again'))}` : ''}</div><div class="fl-q">${esc(ask)}</div>${body}</div>
@@ -1768,7 +1768,8 @@ VIEWS.learn = function () {
           ${due && n ? `<button class="btn-sm primary" data-learn-folder="${esc(p)}">${esc(t('learn.goN', {n: Math.min(due, 40)}))}</button>` : ''}</h2>
         <div class="deck-name">${esc(folderName(p))}</div>
         <div class="meta">${esc([sf ? t(sf === 1 ? 'learn.nSub1' : 'learn.nSubs', {n: sf}) : '', t(ks.length === 1 ? 'learn.nDeck1' : 'learn.nDecks', {n: ks.length}), t(n === 1 ? 'learn.nCard1' : 'learn.nCards', {n}), t('learn.nDue', {n: due})].filter(Boolean).join(' · '))}</div></div>`; };
-    return `<div class="view-title"><h1>${esc(f ? folderName(f) : t('view.learn'))}</h1><span class="sub">${esc(f ? t('learn.folderHint') : t('learn.hint'))}</span></div>
+    if (learnQuery.trim()) return learnTop() + `<div id="learnBody">${searchHtml()}</div>`;
+    return learnTop() + `<div id="learnBody">
       ${allFolders().length ? crumbs : ''}
       <div class="quick"><input class="field-in title-in" id="qTitle" placeholder="${esc(t('learn.deckPh'))}">
         <select id="qKind">${['cards', 'vocab'].map(x => `<option value="${x}"${settings.learnKind === x ? ' selected' : ''}>${esc(t('learn.kind.' + x))}</option>`).join('')}</select>
@@ -1781,10 +1782,10 @@ VIEWS.learn = function () {
           <div class="deck-name">${esc(x.name)}${x.remind === false ? ` <span class="meta" title="${esc(t('remind.offDeck'))}">🔕</span>` : ''}</div>
           <div class="meta">${esc(t(x.cards.length === 1 ? 'learn.nCard1' : 'learn.nCards', {n: x.cards.length}))} · ${esc(t('learn.nKnown', {n: knownCards(x)}))}${ev && validIso(ev.date) ? ` · ${esc(t('learn.forEvent', {what: ev.title || t('type.' + ev.type), when: relDay(ev.date)}))}` : ''}</div>
           ${x.cards.length ? boxBar(x) : ''}</div>`; }).join('')}${subs.length || list.length ? '' : `<div class="empty-s">${esc(t(f ? 'learn.folderEmpty' : 'learn.none'))}</div>`}</div>
-      ${allFolders().length && list.length ? `<p class="meta">${esc(t('learn.dragHint'))}</p>` : ''}`;
+      ${allFolders().length && list.length ? `<p class="meta">${esc(t('learn.dragHint'))}</p>` : ''}</div>`;
   }
   const due = dueCards(k, d).length, ev = eventOf(k.event);
-  return `<div class="view-title"><button class="btn-sm" data-deck-back>‹ ${esc(folderOf(k) ? folderName(folderOf(k)) : t('learn.allDecks'))}</button><h1>${esc(k.name)}</h1>
+  return `<div class="view-title"><button class="btn-sm" data-deck-back>‹ ${esc(learnQuery.trim() ? t('learn.backToSearch') : folderOf(k) ? folderName(folderOf(k)) : t('learn.allDecks'))}</button><h1>${esc(k.name)}</h1>
       <span class="sub">${chip(subj(k.subject))} ${esc(t(k.cards.length === 1 ? 'learn.nCard1' : 'learn.nCards', {n: k.cards.length}))} · ${esc(t('learn.nDue', {n: due}))} · ${esc(t('learn.nKnown', {n: knownCards(k)}))}${ev && validIso(ev.date) ? ` · ${esc(t('learn.forEvent', {what: ev.title || t('type.' + ev.type), when: relDay(ev.date)}))}` : ''}</span></div>
     <div class="quick learn-go"><button class="btn-sm primary" data-learn="${k.id}"${due && k.cards.length ? '' : ' disabled'}>${esc(t('learn.goN', {n: Math.min(due, 40)}))}</button>
       <button class="btn-sm" data-learn-all="${k.id}"${k.cards.length ? '' : ' disabled'}>${esc(t('learn.practiceAll'))}</button>
@@ -1798,6 +1799,70 @@ VIEWS.learn = function () {
         <td><button class="x" data-card-del="${c.id}" title="${esc(t('a.delete'))}">×</button></td></tr>`).join('')}</table>`
       : `<div class="empty-s">${esc(t('learn.empty'))}</div>`}`;
 };
+/* ----- Search over all decks: cards (front or back) and decks (name, subject, folder) ----- */
+let learnQuery = '';
+/* Compared without case, accents and umlaut spelling (ä = ae, ß = ss); every word typed has to be found. */
+const foldText = s => String(s || '').toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+const queryWords = q => foldText(q).split(' ').filter(Boolean);
+function searchCards(q) {
+  const words = queryWords(q); if (!words.length) return {decks: [], cards: []};
+  const hit = (...xs) => { const s = foldText(xs.join('\n')); return words.every(w => s.includes(w)); };
+  return {
+    decks: decks().filter(k => hit(k.name, (subj(k.subject) || {}).name, folderOf(k))),
+    cards: decks().flatMap(k => k.cards.filter(c => hit(c.front, c.back)).map(c => ({k, c})))
+  };
+}
+/* The text with the words found marked (only where they appear as typed, ignoring case). */
+function markWords(text, q) {
+  const words = String(q).trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!words.length) return esc(text);
+  return String(text).split(new RegExp(`(${words.join('|')})`, 'gi')).map((x, i) => i % 2 ? `<mark>${esc(x)}</mark>` : esc(x)).join('');
+}
+const deckPath = k => [...(folderOf(k) ? folderOf(k).split('/') : []), k.name].join(' › ');
+function learnTop() {
+  const f = settings.learnFolder || '';
+  return `<div class="view-title"><h1>${esc(f ? folderName(f) : t('view.learn'))}</h1><span class="sub">${esc(f ? t('learn.folderHint') : t('learn.hint'))}</span></div>
+    <div class="lsearch"><svg class="ico-f" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5"/></svg>
+      <input class="field-in" id="learnSearch" type="search" autocomplete="off" spellcheck="false" placeholder="${esc(t('learn.searchPh', {key: fmtKey(keyOf('searchCards') || 'Ctrl+F')}))}" value="${esc(learnQuery)}"></div>`;
+}
+const SEARCH_MAX = 200;
+function searchHtml() {
+  const q = learnQuery.trim(), r = searchCards(q), d = today();
+  if (!r.decks.length && !r.cards.length) return `<div class="empty-s">${esc(t('learn.searchNone', {q}))}</div>`;
+  const deckRows = r.decks.length ? `<div class="sect">${esc(t('learn.searchDecks', {n: r.decks.length}))}</div><div class="search-decks">${r.decks.map(k =>
+    `<button class="search-deck" data-deck="${k.id}">${subj(k.subject) ? chip(subj(k.subject)) + ' ' : ''}<span>${markWords(deckPath(k), q)}</span><span class="meta">${esc(t(k.cards.length === 1 ? 'learn.nCard1' : 'learn.nCards', {n: k.cards.length}))}</span></button>`).join('')}</div>` : '';
+  const shown = r.cards.slice(0, SEARCH_MAX);
+  const cardRows = r.cards.length ? `<div class="sect search-head">${esc(t(r.cards.length === 1 ? 'learn.searchCard1' : 'learn.searchCards', {n: r.cards.length, m: new Set(r.cards.map(x => x.k.id)).size}))}
+      <button class="btn-sm primary" data-search-drill>${esc(t('learn.searchDrill', {n: r.cards.length}))}</button></div>
+    <table class="ctable search-table">${shown.map(({k, c}) => `<tr data-hit="${c.id}" data-hit-deck="${k.id}" title="${esc(t('learn.searchOpen'))}">
+      <td>${markWords(c.front, q)}</td><td>${markWords(c.back, q)}</td><td class="meta">${esc(deckPath(k))}</td>
+      <td class="meta">${boxDots(c)} ${esc(!c.box ? t('learn.new') : cardDue(c, d) ? t('learn.dueNow') : relDay(c.due))}</td></tr>`).join('')}</table>
+    ${r.cards.length > SEARCH_MAX ? `<p class="meta">${esc(t('learn.searchMore', {n: r.cards.length - SEARCH_MAX}))}</p>` : ''}` : '';
+  return deckRows + cardRows;
+}
+function setLearnQuery(q) {
+  learnQuery = q;
+  const body = $('#learnBody');
+  if (body && !drill && settings.view === 'learn' && !deckOf(settings.learnDeck)) body.outerHTML = `<div id="learnBody">${learnQuery.trim() ? searchHtml() : ''}</div>`;
+  if (!learnQuery.trim()) renderView();
+}
+/* Opens a found card in its deck, scrolled into view and marked. */
+function openHit(deckId, cardId) {
+  openDeck(deckId);
+  setTimeout(() => {
+    const inp = $(`.cin[data-card="${cardId}"]`); if (!inp) return;
+    const row = inp.closest('tr'); row.classList.add('hit-row'); row.scrollIntoView({block: 'center'});
+    inp.focus();
+  }, 0);
+}
+/* Ctrl+F: the search field of Learn (not during a practice round). */
+function focusSearch() {
+  if (drill && !drill.done) { toast(t('learn.searchBusy')); return; }
+  drill = null; settings.learnDeck = ''; if (sel && sel.kind === 'deck') sel = null;
+  setView('learn');
+  const inp = $('#learnSearch'); if (inp) { inp.focus(); inp.select(); }
+}
 /* The deck in the details panel: name, kind, subject, languages, exam; import, export, cards from Claude, delete. */
 function deckDetails(box, field) {
   const k = deckOf(sel.id); if (!k) return;
@@ -1872,7 +1937,7 @@ view.addEventListener('click', e => {
     else if (a === 'override') { drill.result = 'right'; drillAnswer(true); }
     else if (a === 'next') drillAnswer(drill.result !== 'wrong');
     else if (a === 'stop') stopDrill();
-    else if (a === 'retry') startDrill(drill.target, true, [...drill.wrongIds]);
+    else if (a === 'retry') startDrill(drill.target, true, [...drill.wrongIds], drill.search);
     else if (a === 'close') { drill = null; renderAll(); }
     return;
   }
@@ -1890,6 +1955,9 @@ view.addEventListener('click', e => {
   if (all) { startDrill(all.dataset.learnAll, true); return; }
   if (e.target.closest('[data-deck-back]')) { openDeck(''); return; }
   if (e.target.closest('[data-deck-import]')) { importCards(settings.learnDeck); return; }
+  if (e.target.closest('[data-search-drill]')) { const ids = searchCards(learnQuery).cards.map(x => x.c.id); startDrill({folder: ''}, true, ids, true); return; }
+  const hit = e.target.closest('[data-hit]');
+  if (hit) { openHit(hit.dataset.hitDeck, hit.dataset.hit); return; }
   const del = e.target.closest('[data-card-del]');
   if (del) { const k = deckOf(settings.learnDeck); if (k) change(() => { k.cards = k.cards.filter(c => c.id !== del.dataset.cardDel); }); return; }
   const dk = e.target.closest('[data-deck]');
@@ -1907,7 +1975,9 @@ view.addEventListener('change', e => {
     c[e.target.dataset.side] = v.slice(0, 1000); persist();
   }
 });
+view.addEventListener('input', e => { if (e.target.id === 'learnSearch') setLearnQuery(e.target.value); });
 view.addEventListener('keydown', e => {
+  if (e.target.id === 'learnSearch' && e.key === 'Enter') { e.preventDefault(); const x = searchCards(learnQuery); if (x.cards.length) openHit(x.cards[0].k.id, x.cards[0].c.id); else if (x.decks.length) openDeck(x.decks[0].id); return; }
   if (e.key === 'Enter' && e.target.dataset.card) { e.preventDefault(); e.target.blur(); }
 });
 /* Dragging a deck onto a folder (or a part of the path at the top) moves it there. */
@@ -1967,6 +2037,7 @@ const A = {
   undo, redo, deleteSel,
   viewToday: () => setView('today'), viewWeek: () => setView('week'), viewTasks: () => setView('tasks'), viewEvents: () => setView('events'), viewSubjects: () => setView('subjects'), viewGrades: () => setView('grades'),
   viewLearn: () => { if (settings.view === 'learn' && !drill) settings.learnDeck = ''; setView('learn'); },
+  searchCards: () => focusSearch(),
   newDeck: () => { openDeck(''); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
   newFolder: () => { const f = ctxFolder != null ? ctxFolder : settings.view === 'learn' && !settings.learnDeck ? settings.learnFolder || '' : ''; ctxFolder = null; if (settings.view !== 'learn' || settings.learnDeck) openDeck(''); newFolder(f); },
   renameFolder: () => { if (ctxFolder) renameFolder(ctxFolder); ctxFolder = null; },
@@ -1998,7 +2069,7 @@ const A = {
 const MENUS = [
   ['file', [['importPlan', 'Ctrl+O'], ['exportBackup', 'Ctrl+S'], '-', ['exportIcs', 'Ctrl+E'], ['print', 'Ctrl+P']]],
   ['edit', [['undo', 'Ctrl+Z', null, false, ['Ctrl+Shift+Z']], ['redo', 'Ctrl+Y'], '-', ['deleteSel', 'Delete', null, true]]],
-  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newDeck', 'Ctrl+L'], ['newFolder'], ['newSubject'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
+  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newDeck', 'Ctrl+L'], ['newFolder'], ['searchCards', 'Ctrl+F'], ['newSubject'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
   ['view', [['viewToday', 'Alt+1', () => settings.view === 'today'], ['viewWeek', 'Alt+2', () => settings.view === 'week'], ['viewTasks', 'Alt+3', () => settings.view === 'tasks'],
     ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], ['viewGrades', 'Alt+6', () => settings.view === 'grades'], ['viewLearn', 'Alt+7', () => settings.view === 'learn'], '-',
     ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
@@ -2425,6 +2496,7 @@ window.addEventListener('keydown', e => {
   if (drill && !drill.done && settings.view === 'learn' && !typing() && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); return; }
   if (e.key === 'Escape') {
     if ($('#modal').classList.contains('show')) closeModal();
+    else if (document.activeElement && document.activeElement.id === 'learnSearch' && learnQuery) { e.preventDefault(); setLearnQuery(''); }
     else if (menuOpen) closeMenus();
     else if (sel) { sel = null; renderAll(); }
     return;

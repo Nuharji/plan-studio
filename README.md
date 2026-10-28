@@ -30,7 +30,8 @@ and controls as the other Studio apps.
   the answer (small typos and umlaut spellings count) or picking one of four, in either direction; the Leitner system
   brings back what you didn't know soon and what you know rarely. Due cards show in Today, the minutes practised count
   as learned for the subject. Decks go into folders and subfolders (drag a deck onto a folder; learn a whole folder at
-  once), and a daily study reminder (a notification at a time you choose, also for decks of an exam coming up)
+  once), and a daily study reminder (a notification at a time you choose, also for decks of an exam coming up).
+  Search all decks at once (Ctrl+F): front, back, deck and folder names; open a hit in its deck or practise the hits
 - **Grades:** grades per subject in your school's system (1–6 with tendencies, 0–15 points or percent), categories with
   weights (also per subject), grades that count more or less, weighted averages per subject and overall, filter by term,
   "Which grade do I need?" and "Enter grade" right from an exam

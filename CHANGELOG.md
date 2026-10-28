@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0 — 2026-10-28
+- New: search all card decks at once (Learn, or Plan → Search flashcards, Ctrl+F). Finds cards by front or back and
+  decks by name, subject or folder — case, accents and umlaut spelling (ä = ae, ß = ss) don't matter, every word typed
+  has to be found. Each hit shows its deck and folder and how well you know it; clicking it (or Enter for the first)
+  opens the deck with the card marked, "Back to the search" returns to the results. "Practise these N" asks the cards
+  found in one round (like "Practise all"). Esc empties the search.
+
 ## 1.3.0 — 2026-10-28
 - New: folders for card decks (Learn). "New folder" makes one in the folder you're in; folders can hold subfolders
   ("English/Unit 3"). The path at the top opens each level; a folder card shows its decks, cards and due cards. Drag a

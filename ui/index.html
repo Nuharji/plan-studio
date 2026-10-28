@@ -414,6 +414,17 @@ details.more summary{cursor:pointer;color:var(--dim);font-size:12px;margin-botto
 .folder-card{border-style:dashed}.folder-card h2 span{display:flex;align-items:center;gap:5px}
 .drop-on{border-color:var(--accent)!important;background:var(--hover)}.crumb.drop-on{border-style:dashed}
 .dragging{opacity:.5}
+/* Search over all decks */
+.lsearch{display:flex;align-items:center;gap:6px;margin:0 0 12px;max-width:520px;color:var(--dim)}.lsearch .ico-f{width:16px;height:16px}
+.lsearch .field-in{flex:1;height:30px}
+.search-decks{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.search-deck{display:flex;align-items:center;gap:6px;background:var(--card-bg);border:1px solid var(--card-border);border-radius:var(--radius);color:var(--text);font:inherit;padding:5px 9px;cursor:pointer}
+.search-deck:hover{border-color:var(--accent)}
+.search-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.search-table tr[data-hit]{cursor:pointer}.search-table tr[data-hit]:hover td{background:var(--hover)}
+.search-table td{padding:6px;overflow-wrap:anywhere}.search-table td.meta{white-space:normal;max-width:220px}.search-table td.meta:last-child{white-space:nowrap}
+mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;border-radius:2px;padding:0 1px}
+.hit-row td{background:color-mix(in srgb,var(--accent) 14%,transparent);transition:background 1.5s}
 .pcard h2>span{display:flex;gap:6px;align-items:center}
 .deck-name{font-size:15px;font-weight:650;color:var(--strong);margin:0 0 4px;overflow-wrap:anywhere}
 .boxbar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--hover);margin-top:8px;flex:1 1 120px;min-width:80px}

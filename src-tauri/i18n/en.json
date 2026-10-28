@@ -591,5 +591,17 @@
   "a.newFolder": "New folder for decks",
   "a.renameFolder": "Rename folder …",
   "a.deleteFolder": "Remove folder",
-  "a.learnFolder": "Learn folder"
+  "a.learnFolder": "Learn folder",
+  "learn.searchPh": "Search all decks — front, back, deck, folder ({key})",
+  "learn.searchNone": "Nothing found for “{q}”.",
+  "learn.searchDecks": "Decks ({n})",
+  "learn.searchCard1": "1 card",
+  "learn.searchCards": "{n} cards in {m} decks",
+  "learn.searchDrill": "Practise these {n}",
+  "learn.searchOpen": "Open in its deck",
+  "learn.searchMore": "… and {n} more — type more precisely to see them.",
+  "learn.searchBusy": "Finish the practice round first (Esc).",
+  "learn.searchFor": "Search “{q}”",
+  "learn.backToSearch": "Back to the search",
+  "a.searchCards": "Search flashcards"
 }
