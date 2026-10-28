@@ -1715,7 +1715,7 @@ function drillHtml() {
     body = `<div class="fl-line"></div><div class="fl-side">${esc(ansSide)}</div>` + (r
       ? `<div class="fl-typed ${r}">${esc(drill.typed || '—')}</div><div class="fl-verdict ${r}">${esc(t('learn.r.' + r))}</div>${r === 'right' && normAnswer(drill.typed) === normAnswer(ans) ? '' : `<div class="fl-a">${esc(ans)}</div>`}`
       : `<input class="field-in drill-in" id="drillIn" autocomplete="off" spellcheck="false" placeholder="${esc(t('learn.typePh'))}" value="${esc(drill.typed)}">`);
-    btns = r ? `${r === 'wrong' ? `<button class="btn-sm" data-dr="override">${esc(t('learn.override'))}</button>` : ''}<button class="btn-sm primary" data-dr="next">${esc(t('learn.next'))} <kbd>Enter</kbd></button>`
+    btns = r ? `${r === 'wrong' ? `<button class="btn-sm" data-dr="override">${esc(t('learn.override'))}</button>` : r === 'almost' ? `<button class="btn-sm no" data-dr="notKnown">✗ ${esc(t('learn.notKnown'))} <kbd>1</kbd></button>` : ''}<button class="btn-sm primary" data-dr="next">${esc(t('learn.next'))} <kbd>Enter</kbd></button>`
       : `<button class="btn-sm" data-dr="dunno">${esc(t('learn.dunno'))}</button><button class="btn-sm primary" data-dr="check">${esc(t('learn.check'))} <kbd>Enter</kbd></button>`;
   } else {
     const right = i => normAnswer(drill.opts[i]) === normAnswer(ans);
@@ -1728,7 +1728,8 @@ function drillHtml() {
     <div class="flash${drill.mode === 'flip' && !drill.shown ? ' turn' : ''}"${drill.mode === 'flip' && !drill.shown ? ' data-dr="show"' : ''}><div class="fl-side">${esc(askSide)}${drill.again[c.id] ? ` · ${esc(t('learn.again'))}` : ''}</div><div class="fl-q">${esc(ask)}</div>${body}</div>
     <div class="drill-btns">${btns}</div></div>`;
 }
-/* Keys while practising: Space turns over, 1 / 2 (or ← / →) for not known / known, 1–4 picks, Enter checks and goes on, Esc ends. */
+/* Keys while practising: Space turns over, 1 / 2 (or ← / →) for not known / known, 1–4 picks, Enter checks and goes on
+   (1 after an "almost" counts it as not known after all), Esc ends. */
 function drillKey(e) {
   if (!drill || settings.view !== 'learn' || $('#modal').classList.contains('show') || e.ctrlKey || e.metaKey || e.altKey) return false;
   const k = e.key, inInput = e.target && e.target.id === 'drillIn';
@@ -1742,6 +1743,7 @@ function drillKey(e) {
     if (drill.shown && (k === '2' || k === 'ArrowRight' || k === ' ' || k === 'Enter')) return go(() => drillAnswer(true));
   } else if (drill.mode === 'write') {
     if (k === 'Enter') return go(() => drill.result ? drillAnswer(drill.result !== 'wrong') : drillCheck());
+    if (drill.result === 'almost' && !inInput && (k === '1' || k === 'ArrowLeft')) return go(() => { drill.result = 'wrong'; drillAnswer(false); });
   } else {
     if (!drill.result && /^[1-4]$/.test(k)) return go(() => drillPick(+k - 1));
     if (drill.result && (k === 'Enter' || k === ' ')) return go(() => drillAnswer(drill.result !== 'wrong'));
@@ -1935,6 +1937,7 @@ view.addEventListener('click', e => {
     else if (a === 'check') drillCheck();
     else if (a === 'dunno') { drill.typed = ''; drill.result = 'wrong'; renderView(); }
     else if (a === 'override') { drill.result = 'right'; drillAnswer(true); }
+    else if (a === 'notKnown') { drill.result = 'wrong'; drillAnswer(false); }
     else if (a === 'next') drillAnswer(drill.result !== 'wrong');
     else if (a === 'stop') stopDrill();
     else if (a === 'retry') startDrill(drill.target, true, [...drill.wrongIds], drill.search);

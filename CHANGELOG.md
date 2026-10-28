@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.1 — 2026-10-28
+- Learn, type the answer: when an answer is marked "Almost" (one typo), "Didn't know it after all" (or 1) counts the
+  card as not known instead — it goes back to box 1 and comes again later in the round, like a wrong answer.
+
 ## 1.4.0 — 2026-10-28
 - New: search all card decks at once (Learn, or Plan → Search flashcards, Ctrl+F). Finds cards by front or back and
   decks by name, subject or folder — case, accents and umlaut spelling (ä = ae, ß = ss) don't matter, every word typed
