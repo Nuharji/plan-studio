@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0 — 2026-10-29
+- Week view: exams, tests, presentations, deadlines and other dates now show in the week, in a "Dates" row above the
+  periods (with the events of linked calendars), each day with a "+" for a new date on that day. An exam with a time
+  is also marked in the period it starts in, one without a time in the first lesson of its subject that day. Dates on
+  days without a column (the weekend) are listed below the timetable. Click a date to edit it on the right.
+
 ## 1.4.1 — 2026-10-28
 - Learn, type the answer: when an answer is marked "Almost" (one typo), "Didn't know it after all" (or 1) counts the
   card as not known instead — it goes back to box 1 and comes again later in the round, like a wrong answer.

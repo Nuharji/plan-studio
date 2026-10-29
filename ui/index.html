@@ -329,6 +329,20 @@ input[type=date],input[type=time]{color-scheme:light dark}
 .tt td.c.slot .n{color:var(--accent)}
 .tt td.c .ev{display:block;margin-top:3px;font-size:11px;padding:1px 5px;border-radius:5px;background:var(--hover);color:var(--strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .tt td.c .ev:hover{outline:1px solid var(--accent)}
+.tt td.c .ev.mark{display:inline-block;margin-right:3px;font-weight:600;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.tt td.c .ev.mark.exam,.tt td.c .ev.mark.test{background:color-mix(in srgb,var(--danger) 16%,transparent);color:var(--danger)}
+.tt tr.dates-row td.p{vertical-align:top;padding-top:6px}
+.tt td.dd{vertical-align:top;padding:2px;border-radius:var(--radius);background:var(--hover);min-height:26px;position:relative}
+.tt td.dd.today{box-shadow:inset 0 0 0 1px var(--accent)}
+.tt td.dd .ev{display:block;margin:0 18px 3px 0;font-size:11px;padding:2px 5px;border-radius:5px;border-left:3px solid var(--dim);background:var(--card-bg,var(--bg));color:var(--strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.tt td.dd .ev:hover,.tt td.dd .ev.on{outline:1px solid var(--accent)}
+.tt td.dd .ev.cal{cursor:default;opacity:.85}
+.tt td.dd .ev.cal:hover{outline:0}
+.tt td.dd .ev small{opacity:.75;font-variant-numeric:tabular-nums}
+.tt td.dd .ev.exam b,.tt td.dd .ev.test b{color:var(--danger)}
+.tt td.dd .dd-add{position:absolute;top:2px;right:2px;width:16px;height:16px;line-height:14px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--dim);cursor:pointer;opacity:0;font-size:13px}
+.tt td.dd:hover .dd-add,.tt td.dd .dd-add:focus{opacity:1}
+.tt td.dd .dd-add:hover{background:var(--accent);color:#fff}
 .weeknav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-6px 0 12px}
 .weeknav .meta{color:var(--dim)}
 .chip.slot{background:transparent;border:1px dashed var(--accent);color:var(--accent)}
@@ -489,6 +503,7 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
   .menubar,.optbar,.tools,.dock,.status,.toast,.modal-bg{display:none!important}
   .main,.center{display:block!important;overflow:visible!important}
   .view-main{overflow:visible;background:#fff;padding:0}
+  .tt td.dd .dd-add{display:none}
   .tt td.c{border-color:#ccc!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .view-title h1{color:#000}
 }

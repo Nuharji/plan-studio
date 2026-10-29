@@ -17,7 +17,7 @@ and controls as the other Studio apps.
 - Next-7-days panel, undo/redo, print, **calendar export (.ics)** for Outlook / Google / Apple — dates, homework and, if you like, the timetable of the next weeks, backup and import (.plan)
 - **Flexible timetables:** terms (half-years, quarters, blocks) with courses that apply only in some of them; elective
   areas whose subjects form a catalog to choose a slot from; shorter days (e.g. only mornings on Saturday); class sessions at
-  changing times that show in the timetable and in Today; browse the timetable week by week
+  changing times that show in the timetable and in Today; browse the timetable week by week — with the week's exams, tests and other dates (and linked calendar events) above it and marked in their lesson
 - **School year:** holidays and days off, alternating weeks (A/B, with holiday weeks left out of the count), single
   cancelled lessons, own times for a course inside its period, a name for the periods (e.g. "double period")
 - **Elective areas:** chosen once or anew every week (each date on its own, "not taking part" too), offers with category,

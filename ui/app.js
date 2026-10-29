@@ -211,6 +211,16 @@ function ruleWarnings(monday) {
 const classesOn = date => plan.events.filter(e => e.type === 'class' && e.date === date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 const classEnd = e => { const m = minutesOf(e.time) + (+e.minutes || 90); return `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`; };
 const overlaps = (e, p) => !!e.time && minutesOf(e.time) < minutesOf(p.end) && minutesOf(e.time) + (+e.minutes || 90) > minutesOf(p.start);
+/* Exams, tests, deadlines and other dates of a day (not class sessions), all-day ones first. */
+const datesOn = date => plan.events.filter(e => e.type !== 'class' && e.date === date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+/* The period a date belongs to in the timetable: the period its time starts in, or without a time the first lesson
+   of its subject that day (an exam is mostly written in the subject's own lesson); -1 = none. */
+function periodOfDate(e, day, date) {
+  if (e.time) return plan.periods.findIndex(p => minutesOf(e.time) >= minutesOf(p.start) && minutesOf(e.time) < minutesOf(p.end));
+  if (!e.subject || day >= plan.days || holidayOn(date)) return -1;
+  return plan.periods.findIndex((p, i) => !blockedAt(day, i) && lessonsAt(day, i, date, false)
+    .some(l => !(l.skip || []).includes(date) && (choiceOn(l, date).subject || {}).id === e.subject));
+}
 function isoWeek(iso) {
   const d = dateOf(addDays(iso, 3 - weekday(iso))), jan4 = new Date(d.getFullYear(), 0, 4);
   return 1 + Math.round((d - jan4) / 86400000 / 7 + (weekday(isoOf(jan4)) - 3) / 7);
@@ -706,6 +716,12 @@ const VIEWS = {
         ${[...new Set(dates.map(holidayOn).filter(Boolean))].map(x => `<span class="badge warn">${esc(x.name)}</span>`).join('')}
         ${ruleWarnings(ws).map(x => `<span class="badge red">${esc(x)}</span>`).join('')}</div>
       <table class="tt"><tr><th></th>${dates.map((x, i) => `<th class="${x === d ? 'today' : ''}">${esc(dayName(i))}<span class="dt">${esc(holidayOn(x) ? holidayOn(x).name : fmtDate(x, {day: 'numeric', month: 'numeric'}))}</span></th>`).join('')}</tr>`;
+    // The dates of each day (exams, tests, deadlines …, and the events of linked calendars) in a row of their own.
+    const dateLabel = e => e.title || (subj(e.subject) || {}).name || '';
+    h += `<tr class="dates-row"><td class="p"><b>${esc(t('tt.dates'))}</b></td>${dates.map(x => `<td class="dd${x === d ? ' today' : ''}">${datesOn(x).map(e => { const s = subj(e.subject);
+        return `<span class="ev dt ${e.type}${sel && sel.kind === 'event' && sel.id === e.id ? ' on' : ''}" data-event="${e.id}"${s ? ` style="border-left-color:${s.color}"` : ''} title="${esc([t('type.' + e.type), s && s.name, e.title, e.time].filter(Boolean).join(' · '))}">${e.time ? `<small>${esc(e.time)}</small> ` : ''}<b>${esc(t('type.' + e.type))}</b> ${esc(dateLabel(e))}</span>`; }).join('')}
+      ${calEventsOn(x).map(e => `<span class="ev cal" style="border-left-color:${e.cal.color}" title="${esc([e.cal.name, e.location].filter(Boolean).join(' · '))}">${e.time ? `<small>${esc(e.time)}</small> ` : ''}${esc(e.title)}</span>`).join('')}
+      <button class="dd-add" data-date-add="${x}" title="${esc(t('tt.addDate', {date: fmtDate(x)}))}">+</button></td>`).join('')}</tr>`;
     const placed = new Set();
     // Rows: the periods, and between two periods a gap as high as the break is long (5 minutes thin, lunch wider).
     const rows = [];
@@ -764,7 +780,8 @@ const VIEWS = {
               : l.group ? `<span class="n${optionalArea(l.group) ? ' opt' : ''}">${esc(l.group)}</span><span class="r">${esc(t(optionalArea(l.group) ? 'tt.optional' : 'tt.choose'))}</span>${time}` : ''; }).join('')}
           ${hol ? '' : spillsInto(day, i, date).map(l => { const ss = choiceOn(l, date).subject, tm = timeOf(l, plan.periods[l.period]);
             return `<span class="cont" data-home="${day}|${l.period}" title="${esc(`${tm.start}–${tm.end}`)}">↳ ${esc(ss ? ss.name : l.group || '')} <small>${esc(tm.start)}–${esc(tm.end)}</small></span>`; }).join('')}
-          ${cls.map(e => `<span class="ev" data-event="${e.id}" title="${esc(`${e.time}–${classEnd(e)} ${e.title || (subj(e.subject) || {}).name || ''}`)}">${esc(e.time)} ${esc(e.title || (subj(e.subject) || {}).name || t('type.class'))}${e.room ? ' · ' + esc(e.room) : ''}</span>`).join('')}</td>`;
+          ${cls.map(e => `<span class="ev" data-event="${e.id}" title="${esc(`${e.time}–${classEnd(e)} ${e.title || (subj(e.subject) || {}).name || ''}`)}">${esc(e.time)} ${esc(e.title || (subj(e.subject) || {}).name || t('type.class'))}${e.room ? ' · ' + esc(e.room) : ''}</span>`).join('')}
+          ${datesOn(date).filter(e => periodOfDate(e, day, date) === i).map(e => `<span class="ev mark ${e.type}" data-event="${e.id}" title="${esc([e.time, dateLabel(e)].filter(Boolean).join(' '))}">${esc(t('type.' + e.type))}${e.time ? ' ' + esc(e.time) : ''}</span>`).join('')}</td>`;
       });
       h += '</tr>';
     });
@@ -772,6 +789,8 @@ const VIEWS = {
     // Class sessions that fit no period (no time, after the last period, on a free day) are listed below.
     const rest = Array.from({length: 7}, (_, i) => addDays(ws, i)).flatMap(x => classesOn(x)).filter(e => !placed.has(e.id));
     if (rest.length) h += `<div class="group-h">${esc(t('tt.moreClasses'))}</div>` + rest.map(e => eventRow(e)).join('');
+    const later = Array.from({length: 7 - plan.days}, (_, i) => addDays(ws, plan.days + i)).flatMap(datesOn);
+    if (later.length) h += `<div class="group-h">${esc(t('tt.moreDates'))}</div>` + later.map(e => eventRow(e)).join('');
     return h;
   },
   tasks() {
@@ -1039,6 +1058,8 @@ view.addEventListener('click', e => {
 
   const wk = e.target.closest('[data-week]');
   if (wk) { const n = +wk.dataset.week; weekStart = n ? addDays(shownMonday(), 7 * n) : null; renderView(); renderDetails(); return; }
+  const da = e.target.closest('[data-date-add]');
+  if (da) { const x = {id: uid(), type: 'test', subject: '', title: '', date: da.dataset.dateAdd, time: '', notes: ''}; change(() => plan.events.push(x)); sel = {kind: 'event', id: x.id}; showDetails(); setTimeout(() => { const f = document.querySelector('[data-f="title"]'); if (f) f.focus(); }, 0); return; }
   const ev = e.target.closest('.ev[data-event]');
   if (ev) { sel = {kind: 'event', id: ev.dataset.event}; showDetails(); return; }
   const home = e.target.closest('[data-home]');
