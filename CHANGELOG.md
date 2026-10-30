@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.0 — 2026-10-30
+- New: Layouts, next to the themes (Settings → Appearance; shared by all Studio apps, any layout goes with any theme). **Adobe** is the look so far; **Modern** has rounded, floating panels and more room; **Custom** is yours: panels and tool rail left or right, density, corners, floating panels, status bar.
+
 ## 1.6.0 — 2026-10-30
 - New: substitutions for a single date. Click a lesson in the week and set "Substitution on …" to a substitute teacher
   (same subject, another teacher) or a substitute subject (another subject takes place), each with the substitute's name
