@@ -133,7 +133,8 @@ const timeOf = (l, p) => ({start: l.start || p.start, end: l.end || p.end});
 function roomFor(l, date, c = choiceOn(l, date)) {
   const day = date && (l.roomOn || {})[date];
   if (day) return {room: day, changed: true};
-  const s = c.subject || {}, dr = (s.dayRooms || {})[l.day];
+  // A substitute subject stays in the room of the planned lesson (a room change is entered on its own).
+  const s = c.planned || c.subject || {}, dr = (s.dayRooms || {})[l.day];
   // An offer of an elective area brings its own room (per weekday if set); a normal slot's own room comes first.
   const room = l.group ? dr || (c.picked ? s.room || l.room : l.room || s.room) : l.room || dr || s.room;
   return {room: room || '', changed: false};
@@ -161,7 +162,7 @@ const weeklyArea = name => !!name && areaOf(name).weekly !== false;
 /* A voluntary area: choosing nothing is fine — no reminder, and an unchosen slot stays quiet. */
 const optionalArea = name => !!name && !!areaOf(name).optional;
 const OFF = '-';
-function choiceOn(l, date) {
+function plannedOn(l, date) {
   const p = date && l.picks && l.picks[date];
   if (p === OFF) return {off: true, subject: null, picked: true};
   if (p && subj(p)) return {subject: subj(p), picked: true};
@@ -171,6 +172,17 @@ function choiceOn(l, date) {
   if (s && weeklyArea(l.group) && !l.everyWeek) return {subject: null, picked: false};
   return {subject: s && !(l.group && s.weekType && cycle() && date && s.weekType !== weekTypeOf(date)) ? s : null, picked: false};
 }
+/* Substitution on one date, stored per date in `subOn`: another teacher (kind "teacher") or another subject (kind
+   "subject"), each with the substitute's name if known. A substitute subject counts as the lesson of that day. */
+const subOn = (l, date) => (date && (l.subOn || {})[date]) || null;
+function choiceOn(l, date) {
+  const c = plannedOn(l, date), v = subOn(l, date);
+  if (!v || c.off) return c;
+  const s = v.kind === 'subject' && subj(v.subject);
+  return s ? {...c, subject: s, planned: c.subject, sub: v} : {...c, sub: v};
+}
+const subText = c => [t('tt.sub.' + c.sub.kind), c.sub.teacher, c.planned && c.planned !== c.subject ? t('tt.subFor', {name: c.planned.name}) : ''].filter(Boolean).join(' · ');
+const subHtml = c => c.sub ? `<b class="sub-note">${esc(subText(c))}</b>` : '';
 /* The offers of an area for one slot: matching the week type and offered in that slot (or everywhere). */
 const offersFor = (group, day, period, date) => plan.subjects.filter(s => (s.group || '').trim() === group
   && (!s.weekType || !cycle() || s.weekType === weekTypeOf(date)) && (!(s.offered || []).length || s.offered.includes(`${day}|${period}`)));
@@ -199,7 +211,7 @@ function ruleWarnings(monday) {
     for (let i = 0; i < plan.days; i++) {
       const date = addDays(monday, i);
       plan.lessons.filter(l => l.day === i && l.group === g && lessonOn(l, date)).forEach(l => {
-        const c = choiceOn(l, date);
+        const c = plannedOn(l, date);
         if (c.subject && (c.subject.category || '').trim().toLowerCase() === r.category.trim().toLowerCase()) n++;
       });
     }
@@ -655,7 +667,7 @@ const VIEWS = {
       .filter(l => !(optionalArea(l.group) && !choiceOn(l, d).subject)).map(l => [i, p, l])) : [];
     const items = [...lessons.map(([i, p, l]) => { const c = choiceOn(l, d), tm = timeOf(l, p);
         return {at: minutesOf(tm.start), html: `<div class="row${i === now ? ' now' : ''}" data-goto="${d}|${w}|${i}"><span class="lesson-no">${i + 1}</span><span class="lesson-time">${esc(tm.start)}–${esc(tm.end)}</span>
-            ${c.subject ? chip(c.subject) : l.group ? openSlot(l.group) : ''}<span class="grow meta">${c.off ? esc(t('tt.off')) : !c.subject && l.group ? esc(t('tt.notChosen')) : roomHtml(roomFor(l, d, c))}</span></div>`}; }),
+            ${c.subject ? chip(c.subject) : l.group ? openSlot(l.group) : ''}<span class="grow meta">${c.off ? esc(t('tt.off')) : !c.subject && l.group ? esc(t('tt.notChosen')) : [roomHtml(roomFor(l, d, c)), subHtml(c)].filter(Boolean).join(' · ')}</span></div>`}; }),
       ...classesOn(d).map(e => ({at: minutesOf(e.time), html: `<div class="row${sel && sel.kind === 'event' && sel.id === e.id ? ' sel' : ''}" data-event="${e.id}"><span class="lesson-no">•</span>
             <span class="lesson-time">${e.time ? esc(e.time) + '–' + esc(classEnd(e)) : esc(t('cal.allDay'))}</span>${chip(subj(e.subject))}<span class="grow">${esc(e.title)}</span>${e.room ? `<span class="meta">${esc(e.room)}</span>` : ''}</div>`}))]
       .sort((a, b) => a.at - b.at);
@@ -776,7 +788,7 @@ const VIEWS = {
             const time = l.start || l.end ? `<span class="r">${esc(timeOf(l, p).start)}–${esc(timeOf(l, p).end)}</span>` : '';
             if (gone) return `<span class="n cancel">${esc(ss ? ss.name : l.group || '')}</span><span class="r">${esc(t('tt.cancelled'))}</span>`;
             if (c.off) return `<span class="n">${esc(l.group)}</span><span class="r">${esc(t('tt.off'))}</span>`;
-            return ss ? `<span class="n" style="color:${ss.color}">${esc(ss.name)}</span><span class="r">${roomHtml(roomFor(l, date, c))}</span>${time}`
+            return ss ? `<span class="n" style="color:${ss.color}">${esc(ss.name)}</span><span class="r">${roomHtml(roomFor(l, date, c))}</span>${time}${c.sub ? `<span class="r sub-note">${esc(subText(c))}</span>` : ''}`
               : l.group ? `<span class="n${optionalArea(l.group) ? ' opt' : ''}">${esc(l.group)}</span><span class="r">${esc(t(optionalArea(l.group) ? 'tt.optional' : 'tt.choose'))}</span>${time}` : ''; }).join('')}
           ${hol ? '' : spillsInto(day, i, date).map(l => { const ss = choiceOn(l, date).subject, tm = timeOf(l, plan.periods[l.period]);
             return `<span class="cont" data-home="${day}|${l.period}" title="${esc(`${tm.start}–${tm.end}`)}">↳ ${esc(ss ? ss.name : l.group || '')} <small>${esc(tm.start)}–${esc(tm.end)}</small></span>`; }).join('')}
@@ -904,12 +916,18 @@ function renderDetails() {
   if (sel.kind === 'cell') {
     const p = plan.periods[sel.period], date = addDays(shownMonday(), sel.day), hol = holidayOn(date);
     const all = plan.lessons.filter(l => l.day === sel.day && l.period === sel.period), l = lessonAt(sel.day, sel.period, date, false);
-    const c = l ? choiceOn(l, date) : {}, weekly = l && weeklyArea(l.group);
+    const c = l ? plannedOn(l, date) : {}, weekly = l && weeklyArea(l.group);
     const cur = weekly ? (c.subject || {}).id : l && l.subject;
     const pal = list => `<div class="palette">${list.map(s => `<button data-assign="${s.id}" class="${cur === s.id ? 'on' : ''}" title="${esc([s.category, s.room, s.teacher].filter(Boolean).join(' · '))}"><i style="background:${s.color}"></i>${esc(s.name)}</button>`).join('')}</div>`;
     const offers = l && l.group ? offersFor(l.group, sel.day, sel.period, date) : [];
     const cats = [...new Set(offers.map(s => (s.category || '').trim()))];
     const catalog = cats.map(k => `${cats.length > 1 || k ? `<div class="sub-sect">${esc(k || t('area.noCategory'))}</div>` : ''}${pal(offers.filter(s => (s.category || '').trim() === k))}`).join('');
+    const subBox = x => {
+      const v = subOn(x, date) || {}, opt = (k, label) => `<option value="${k}"${(v.kind || '') === k ? ' selected' : ''}>${esc(t(label))}</option>`;
+      return `<div class="ed-field"><label>${esc(t('tt.subDay', {date: fmtDate(date)}))}</label><select data-lsub="kind" data-lsubid="${x.id}">${opt('', 'tt.subNone')}${opt('teacher', 'tt.sub.teacher')}${opt('subject', 'tt.sub.subject')}</select></div>
+        ${v.kind === 'subject' ? field('tt.subSubject', `<select data-lsub="subject" data-lsubid="${x.id}">${subjectOptions(v.subject || '')}</select>`) : ''}
+        ${v.kind ? field('tt.subTeacher', `<input class="field-in" data-lsub="teacher" data-lsubid="${x.id}" value="${esc(v.teacher || '')}" placeholder="${esc(t('tt.subTeacherPh'))}">`) : ''}`;
+    };
     const lessonBox = x => {
       const ss = subj(x.subject), x_on = x === l;
       return `<div class="lesson-box${x_on ? ' active' : ''}">
@@ -918,6 +936,7 @@ function renderDetails() {
         ${field(x.group && weeklyArea(x.group) ? 'tt.fixedChoice' : 'ui.subject', `<select data-l="subject" data-lid="${x.id}">${subjectOptions(weeklyArea(x.group) && !x.everyWeek ? '' : x.subject, !x.group)}</select>`)}
         ${field('tt.roomWeekly', `<input class="field-in" data-l="room" data-lid="${x.id}" value="${esc(x.room || '')}" placeholder="${esc((ss || {}).room || t('tt.roomNone'))}">`)}
         <div class="ed-field"><label>${esc(t('tt.roomDay', {date: fmtDate(date)}))}</label><input class="field-in" data-lroomday="${x.id}" value="${esc((x.roomOn || {})[date] || '')}" placeholder="${esc(t('tt.roomDayPh'))}"></div>
+        ${subBox(x)}
         <details class="more"${x.group || !x.subject || (x.terms || []).length || x.weekType || x.start || x.end || (x.skip || []).includes(date) ? ' open' : ''}><summary>${esc(t('tt.moreOptions'))}</summary>
         ${field('tt.group', `<input class="field-in" data-l="group" data-lid="${x.id}" list="groupList" value="${esc(x.group || '')}" placeholder="${esc(t('tt.groupPh'))}">`)}
         ${terms().length ? field('tt.terms', `<div class="term-checks">${terms().map(tm => `<label><input type="checkbox" data-lterm="${x.id}|${tm.id}"${(x.terms || []).includes(tm.id) ? ' checked' : ''}> ${esc(tm.name)}</label>`).join('')}</div>
@@ -1184,6 +1203,17 @@ $('#details').addEventListener('change', e => {
     });
     return;
   }
+  if (e.target.dataset.lsub) {
+    const l = plan.lessons.find(x => x.id === e.target.dataset.lsubid), date = addDays(shownMonday(), sel.day), k = e.target.dataset.lsub, val = e.target.value.trim();
+    if (l) change(() => {
+      const r = {};
+      for (const [d, x] of Object.entries(l.subOn || {})) if (d >= addDays(today(), -400)) r[d] = x;   // old ones are dropped after a year, like room changes
+      if (k === 'kind' && !val) delete r[date];
+      else { r[date] = {...r[date], [k]: val}; if (r[date].kind !== 'subject') delete r[date].subject; }
+      l.subOn = r;
+    });
+    return;
+  }
   if (e.target.matches('[data-topic-add]') && sel && sel.kind === 'event') {
     const ev = eventOf(sel.id), text = e.target.value.trim(); if (!ev || !text) return;
     change(() => { ev.topics = [...(ev.topics || []), {id: uid(), text, done: false}]; });
@@ -1227,7 +1257,7 @@ $('#details').addEventListener('click', e => {
   if (a) {
     const {day, period} = sel, date = addDays(shownMonday(), day), l = lessonAt(day, period, date, false);
     const others = plan.lessons.some(x => x.day === day && x.period === period);
-    if (l && weeklyArea(l.group)) { setPick(l, date, choiceOn(l, date).picked && (choiceOn(l, date).subject || {}).id === a.dataset.assign ? null : a.dataset.assign); return; }
+    if (l && weeklyArea(l.group)) { setPick(l, date, plannedOn(l, date).picked && (plannedOn(l, date).subject || {}).id === a.dataset.assign ? null : a.dataset.assign); return; }
     change(() => {
       // Clicking the same subject again clears it (an elective slot stays, only the choice goes).
       if (l && l.subject === a.dataset.assign) { if (l.group) l.subject = ''; else plan.lessons = plan.lessons.filter(x => x !== l); }
@@ -1245,9 +1275,9 @@ $('#details').addEventListener('click', e => {
   }
   if (e.target.closest('[data-pick-off],[data-pick-fixed],[data-pick-clear]')) {
     const date = addDays(shownMonday(), sel.day), l = lessonAt(sel.day, sel.period, date, false); if (!l) return;
-    if (e.target.closest('[data-pick-off]')) setPick(l, date, choiceOn(l, date).off ? null : OFF);
+    if (e.target.closest('[data-pick-off]')) setPick(l, date, plannedOn(l, date).off ? null : OFF);
     else if (e.target.closest('[data-pick-clear]')) setPick(l, date, null);
-    else { const id = (choiceOn(l, date).subject || {}).id; change(() => { l.subject = id; l.everyWeek = true; if (l.picks) delete l.picks[date]; }); }
+    else { const id = (plannedOn(l, date).subject || {}).id; change(() => { l.subject = id; l.everyWeek = true; if (l.picks) delete l.picks[date]; }); }
     return;
   }
   const ld = e.target.closest('[data-ldel]');
@@ -1356,7 +1386,7 @@ function lessonOccurrences(weeks, from = today()) {
       const c = choiceOn(l, date);
       if (c.off || !c.subject) return;
       const tm = timeOf(l, p);
-      out.push({id: `${l.id}-${date}`, date, start: tm.start, end: tm.end, title: c.subject.name, room: roomFor(l, date, c).room, teacher: c.subject.teacher || ''});
+      out.push({id: `${l.id}-${date}`, date, start: tm.start, end: tm.end, title: c.subject.name, room: roomFor(l, date, c).room, teacher: c.sub ? subText(c) : c.subject.teacher || ''});
     }));
   }
   return out;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0 — 2026-10-30
+- New: substitutions for a single date. Click a lesson in the week and set "Substitution on …" to a substitute teacher
+  (same subject, another teacher) or a substitute subject (another subject takes place), each with the substitute's name
+  if known. The week, Today and the calendar export show it; a substitute subject counts as that day's lesson (colour,
+  next-lesson due dates, exam marks), the room stays the planned one. Other weeks don't change.
+
 ## 1.5.0 — 2026-10-29
 - Week view: exams, tests, presentations, deadlines and other dates now show in the week, in a "Dates" row above the
   periods (with the events of linked calendars), each day with a "+" for a new date on that day. An exam with a time

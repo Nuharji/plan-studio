@@ -19,7 +19,7 @@ and controls as the other Studio apps.
   areas whose subjects form a catalog to choose a slot from; shorter days (e.g. only mornings on Saturday); class sessions at
   changing times that show in the timetable and in Today; browse the timetable week by week — with the week's exams, tests and other dates (and linked calendar events) above it and marked in their lesson
 - **School year:** holidays and days off, alternating weeks (A/B, with holiday weeks left out of the count), single
-  cancelled lessons, own times for a course inside its period, a name for the periods (e.g. "double period")
+  cancelled lessons, substitutions on a single date (another teacher or another subject), own times for a course inside its period, a name for the periods (e.g. "double period")
 - **Elective areas:** chosen once or anew every week (each date on its own, "not taking part" too), offers with category,
   week type and the slots they are given in, a deadline and weekly rules ("at least 1 from Languages"); Today reminds you
   of open choices
