@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.8.1 — 2026-11-03
+- Fix (macOS): the app no longer asks again and again for access to your Documents folder (or Desktop, Downloads). The app is now signed as a whole, so macOS can remember your answer. After an update, macOS may ask once more.
+
 ## 1.8.0 — 2026-11-03
 - New: MCP server. Started with `--mcp`, Plan Studio opens no window and lets Claude, ChatGPT and other MCP clients use it: `plan_read`, `plan_add_task`, `plan_add_event`. It uses the plan the app uses and saves like the app: an open Plan Studio notices the change. Only the app sets up a plan, so open it once first. Setup: see README → MCP.
 
