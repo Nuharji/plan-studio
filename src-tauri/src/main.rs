@@ -4,6 +4,8 @@
 mod caldav;
 mod feed;
 mod agentlink;
+mod mcp;
+mod mcp_tools;
 mod shared;
 mod store;
 mod ical;
@@ -227,6 +229,7 @@ fn clipboard_write(app: AppHandle, text: String) -> Result<(), String> {
 }
 
 fn main() {
+    if mcp::wanted() { return mcp_tools::run(); }
     let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).filter(|p| p.is_file()).collect();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

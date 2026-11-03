@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.8.0 — 2026-11-03
+- New: MCP server. Started with `--mcp`, Plan Studio opens no window and lets Claude, ChatGPT and other MCP clients use it: `plan_read`, `plan_add_task`, `plan_add_event`. It uses the plan the app uses and saves like the app: an open Plan Studio notices the change. Only the app sets up a plan, so open it once first. Setup: see README → MCP.
+
 ## 1.7.0 — 2026-10-30
 - New: Layouts, next to the themes (Settings → Appearance; shared by all Studio apps, any layout goes with any theme). **Adobe** is the look so far; **Modern** has rounded, floating panels and more room; **Custom** is yours: panels and tool rail left or right, density, corners, floating panels, status bar.
 

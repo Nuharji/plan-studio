@@ -46,6 +46,33 @@ and controls as the other Studio apps.
 The plan is saved in the app's data folder (`plan.json`, the previous version as `plan.bak`); a `plan.json` next to the
 program is used instead (portable, e.g. on a USB stick).
 
+## MCP
+Plan Studio is also an MCP server, so Claude (Desktop or Code), ChatGPT and other MCP clients can use what it can do:
+started with `--mcp`, the program opens no window and speaks MCP on stdin / stdout until the client closes it.
+
+- `plan_read` — Reads the plan: subjects, periods, lessons (timetable; day 0 is the first school day), tasks (homework) and events (exams, tests, deadlines …).
+- `plan_add_task` — Adds homework to the plan.
+- `plan_add_event` — Adds a date to the plan (exam, test, talk, deadline, class or other).
+
+It uses the plan the app uses and saves like the app: an open Plan Studio notices the change. Only the app sets up a plan, so open it once first. Files are given as full paths.
+
+Claude Code: `claude mcp add plan-studio -- "/Applications/Plan Studio.app/Contents/MacOS/plan-studio" --mcp`.
+Claude Desktop (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "plan-studio": {
+      "command": "/Applications/Plan Studio.app/Contents/MacOS/plan-studio",
+      "args": [
+        "--mcp"
+      ]
+    }
+  }
+}
+```
+The program is `/Applications/Plan Studio.app/Contents/MacOS/plan-studio` on macOS, `plan-studio.exe` in the install folder on
+Windows, and `plan-studio` (or the AppImage) on Linux.
+
 ## Layout
 ```
 ui/                 index.html, app.js; native.js, autohide.js, shortcuts.js (the same in every Studio app)
