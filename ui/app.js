@@ -257,7 +257,7 @@ function currentPeriod() {
 
 /* ================= Settings, history, saving ================= */
 const THEMES = ['dark', 'light', 'github', 'github-dark'];
-const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, dockTab: 'details', view: 'today', showDone: false, icsTasks: true, icsWeeks: 0, feedOn: false};
+const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, dockTab: 'details', view: 'today', showDone: false, icsTasks: true, icsWeeks: 0, feedOn: false, filesRoot: '', aiClaude: '', aiModel: ''};
 let settings = {...DEF}, sel = null, booted = false, saveT = 0, dirty = false;
 const hist = {back: [], fwd: []};
 const effectiveLang = () => settings.lang === 'auto' ? ((navigator.language || 'en').toLowerCase().startsWith('de') ? 'de' : 'en') : settings.lang;
@@ -660,6 +660,7 @@ function eventRow(e, withDate = true) {
     ${withDate && validIso(e.date) ? `<span class="meta">${esc(fmtDate(e.date))}${e.time ? ' · ' + esc(e.time) : ''}</span>` : ''}${validIso(e.date) ? dueBadge(e.date, dayDiff(today(), e.date) < 0) : ''}</div>`;
 }
 const VIEWS = {
+  files() { return Files.view(); },
   today() {
     const d = today(), w = weekday(d), now = currentPeriod();
     const hol = holidayOn(d);
@@ -700,7 +701,7 @@ const VIEWS = {
               return `<div class="sb-row"><span class="sb-name">${esc(s.name)}</span><span class="sb-bar"><i style="width:${Math.round(n / Math.max(...Object.values(week)) * 100)}%;background:${s.color}"></i></span><span class="meta">${esc(t('study.min', {n}))}</span></div>`; }).join('')}</div>` : ''}</div>`;
         })()}
         ${learnCard(d)}
-        ${agentCard(d)}
+        ${AI.card(d)}
         <div class="pcard"><h2>${esc(t('ui.homework'))}<button class="btn-sm" data-act="newTask">${esc(t('ui.add'))}</button></h2>
           ${overdue.length ? `<div class="group-h red">${esc(t('g.overdue'))}</div>${overdue.sort(byDue).map(x => taskRow(x, true)).join('')}` : ''}
           ${soon.length ? soon.sort(byDue).map(x => taskRow(x, true)).join('') : overdue.length ? '' : `<div class="empty-s">${esc(t('ui.noHomework'))}</div>`}</div>
@@ -971,6 +972,7 @@ function renderDetails() {
       ${field('ui.due', `<div class="two"><input type="date" data-f="due" value="${esc(x.due || '')}"><button class="btn-sm" data-next-lesson>${esc(t('ui.nextLesson'))}</button></div>`)}
       ${field('ui.notes', `<textarea data-f="notes">${esc(x.notes || '')}</textarea>`)}
       <label class="switch"><input type="checkbox" data-f="done"${x.done ? ' checked' : ''}><span></span>${esc(t('ui.markDone'))}</label>
+      ${Files.attached('task', x.id)}
       <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
   } else if (sel.kind === 'event') {
     const e = plan.events.find(y => y.id === sel.id); if (!e) return;
@@ -995,6 +997,7 @@ function renderDetails() {
             return `<div class="sect">${esc(t('learn.cardsFor'))}</div>${ks.map(k => `<div class="sess"><span class="grow">${esc(k.name)}</span><span class="meta">${esc(t('learn.nDue', {n: dueCards(k).length}))}</span><button class="btn-sm" data-open-deck="${k.id}">${esc(t('learn.open'))}</button></div>`).join('')}
               <p><button class="btn-sm" data-deck-for="${e.id}">${esc(t('learn.deckFor'))}</button></p>`; })()}`;
       })() : ''}
+      ${Files.attached('event', e.id)}
       <p><button class="btn-sm" data-copy-week>${esc(t('ui.copyWeek'))}</button> ${['exam', 'test', 'talk'].includes(e.type) ? `<button class="btn-sm" data-grade-for="${e.id}">${esc(t(grades().some(g => g.event === e.id) ? 'grade.showForEvent' : 'grade.forEvent'))}</button> ` : ''}<button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
   } else if (sel.kind === 'grade') {
     const g = grades().find(y => y.id === sel.id); if (!g) return;
@@ -1010,6 +1013,8 @@ function renderDetails() {
       <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
   } else if (sel.kind === 'deck') {
     deckDetails(box, field);
+  } else if (sel.kind === 'file') {
+    Files.details(box, field);
   } else if (sel.kind === 'subject') {
     const s = subj(sel.id); if (!s) return;
     box.innerHTML = `<div class="sect">${esc(t('ui.subject'))}</div>
@@ -1335,6 +1340,7 @@ function setPick(l, date, id) {
 }
 function deleteSel() {
   if (!sel) return;
+  if (sel.kind === 'file') return Files.deleteSelected();
   if (sel.kind === 'cell') { const l = lessonAt(sel.day, sel.period, addDays(shownMonday(), sel.day), false); if (l) change(() => { plan.lessons = plan.lessons.filter(x => x !== l); }); return; }
   if (sel.kind === 'deck') {
     const k = deckOf(sel.id); if (!k) return;
@@ -1414,26 +1420,10 @@ function print() { const v = settings.view; if (v !== 'week' && v !== 'tasks' &&
 
 /* ================= Actions, menus, shortcuts ================= */
 function setView(v) { settings.view = v; if (sel && sel.kind === 'cell' && v !== 'week') sel = null; saveSettings(); renderAll(); }
-/* ================= Agent Studio ================= */
-/* The morning overview from Agent Studio (Claude as an assistant; agentlink.js reads its status.json): what needs
-   you, what runs, what it did for you today. Homework and dates can be entered in your own words ("Maths p. 34 by
-   Thursday") — Claude reads them and sends back entries, which you take over with one click; a study plan for the
-   next exams can be asked for, with topics from your notes in the work folder. */
-let agentSeen = '';
-function agentCard(d) {
-  const st = window.AgentLink && AgentLink.status;
-  if (!st) return '';
-  const from = dateOf(d).getTime(), done = (st.done || []).filter(x => x.ended >= from);
-  const time = ms => new Date(ms).toLocaleTimeString(lang === 'de' ? 'de-DE' : 'en-GB', {hour: '2-digit', minute: '2-digit'});
-  const items = (st.items || []).filter(x => x.kind === 'question' || x.kind === 'approval');
-  return `<div class="pcard"><h2>${esc(t('agent.card'))}<button class="btn-sm" data-act="agentOpen">${esc(t('agent.open'))}</button></h2>
-    ${st.needsYou ? `<div class="row warn-row" data-act="agentOpen">${esc(t('agent.needs', {n: st.needsYou}))}</div>${items.slice(0, 3).map(x => `<div class="row" data-act="agentOpen"><span class="grow">${esc(x.title)}</span><span class="meta">${esc(t(x.kind === 'approval' ? 'agent.approval' : 'agent.question'))}</span></div>`).join('')}` : ''}
-    ${(st.running || []).map(x => `<div class="row"><span class="badge warn">${esc(t('agent.running'))}</span><span class="grow">${esc(x.title)}</span></div>`).join('')}
-    ${done.length ? `<div class="group-h">${esc(t('agent.doneToday', {n: done.length}))}</div>${done.slice(0, 5).map(x => `<div class="row" title="${esc(x.summary)}"><span class="lesson-time">${esc(time(x.ended))}</span><span class="grow">${esc(x.title)}</span></div>`).join('')}`
-      : !st.needsYou && !(st.running || []).length ? `<div class="empty-s">${esc(t('agent.nothing'))}</div>` : ''}
-    <div class="agent-quick"><input class="field-in" id="agentIn" placeholder="${esc(t('agent.ph'))}"><button class="btn-sm primary" data-act="agentAdd">${esc(t('agent.add'))}</button></div>
-    <p class="meta" style="margin:6px 0 0"><button class="btn-sm" data-act="agentStudy">${esc(t('agent.study'))}</button></p></div>`;
-}
+/* ================= AI for school (ai.js) ================= */
+/* Plan Studio asks Claude itself now (before: through Agent Studio). Homework and dates can be entered in your own
+   words ("Maths p. 34 by Thursday") — Claude reads them and sends back entries, which you take over with one click;
+   a study plan for the next exams, with topics from your files in the school folder; cards for a deck. */
 /* What Claude needs to know to turn a sentence into entries. */
 function agentContext() {
   const d = today();
@@ -1460,20 +1450,6 @@ function agentTake(r) {
   change(() => { plan.tasks.push(...x.tasks); plan.events.push(...x.events); });
   toast(t('agent.added', {n: x.tasks.length + x.events.length}));
 }
-function agentInit() {
-  if (!window.AgentLink) return;
-  AgentLink.init({app: 'Plan Studio', lang: () => lang,
-    actions: r => { const x = agentEntries(r), c = agentCardList(r);
-      return [...x ? [{label: t('agent.take', {n: x.tasks.length + x.events.length}), run: () => agentTake(r)}] : [],
-        ...c ? [{label: t('learn.take', {n: c.cards.length}), run: () => agentTakeCards(r)}] : []]; },
-    onStatus: st => {
-      const key = JSON.stringify({...(st || {}), beat: 0});
-      if (key === agentSeen) return;
-      agentSeen = key;
-      if (booted && settings.view === 'today' && !typing()) renderView();
-    }});
-}
-view.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'agentIn') { e.preventDefault(); run('agentAdd'); } });
 
 /* ================= Learning: flashcards and vocabulary ================= */
 /* Decks of cards (front / back) or of vocabulary (language A / B), per subject and, if you like, for an exam. Learning
@@ -1930,7 +1906,7 @@ function deckDetails(box, field) {
     ${field('learn.event', `<select data-f="event"><option value="">${esc(t('learn.noEvent'))}</option>${exams.map(e => `<option value="${e.id}"${e.id === k.event ? ' selected' : ''}>${esc(`${fmtDate(e.date)} · ${t('type.' + e.type)}${(subj(e.subject) || {}).name ? ' ' + subj(e.subject).name : ''}${e.title ? ' – ' + e.title : ''}`)}</option>`).join('')}</select><div class="meta">${esc(t('learn.eventHint'))}</div>`)}
     <p class="pick-btns"><button class="btn-sm" data-deck-import>${esc(t('learn.import'))}</button><button class="btn-sm" data-deck-export${k.cards.length ? '' : ' disabled'}>${esc(t('learn.export'))}</button>
       ${k.cards.some(c => c.box) ? `<button class="btn-sm" data-deck-reset>${esc(t('learn.reset'))}</button>` : ''}</p>
-    ${window.AgentLink ? `<p><button class="btn-sm" data-deck-agent>${esc(t('learn.agent'))}</button></p><p class="meta">${esc(t('learn.agentHint'))}</p>` : ''}
+    ${invoke ? `<p><button class="btn-sm" data-deck-agent>${esc(t('learn.agent'))}</button></p><p class="meta">${esc(t('learn.agentHint'))}</p>` : ''}
     <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('learn.deleteDeck'))}</button></p>`;
 }
 function importCards(deckId) {
@@ -1955,15 +1931,6 @@ $('#modalBody').addEventListener('click', e => {
   const n = addCards(b.dataset.importGo, list);
   closeModal(); toast(t('learn.imported', {n, skip: list.length - n}));
 });
-/* Cards from Claude (Agent Studio): about the deck's topic, the exam's topics and notes, or your notes in the work folder. */
-function agentCards(k) {
-  const ev = eventOf(k.event), s = subj(k.subject), work = window.Shared && (Shared.values || {}).workFolder;
-  const about = [k.name, s ? s.name : '', ev ? [ev.title, (ev.topics || []).map(x => x.text).join(', '), (ev.notes || '').slice(0, 400)].filter(Boolean).join(' · ') : ''].filter(Boolean).join(' — ');
-  const task = t(k.kind === 'vocab' ? 'learn.agentVocab' : 'learn.agentTask', {about, a: k.a || t('learn.langA'), b: k.b || t('learn.langB'), have: k.cards.slice(0, 60).map(c => c.front).join('; ') || '—'})
-    + (work ? '\n' + t('learn.agentWork') : '');
-  AgentLink.send({title: t('learn.agentTitle', {name: k.name}), dir: work || '',
-    presets: [{label: t('learn.agent'), task, level: 'read', format: `{"deck": "${k.id}", "cards": [{"front": "…", "back": "…"}]}`}]});
-}
 /* Cards Claude sent back (studio-result block): {deck, cards: [{front, back}]}. */
 function agentCardList(r) {
   const x = r && r.data; if (!x || typeof x !== 'object' || !Array.isArray(x.cards)) return null;
@@ -2061,29 +2028,21 @@ $('#details').addEventListener('click', e => {
   const k = deckOf(sel.id); if (!k) return;
   if (e.target.closest('[data-deck-import]')) importCards(k.id);
   else if (e.target.closest('[data-deck-export]')) exportText(`${k.name}.txt`, t('learn.textFile'), 'txt', k.cards.map(c => `${c.front.replace(/[\t\n]/g, ' ')}\t${c.back.replace(/[\t\n]/g, ' ')}`).join('\n') + '\n', 'text/plain');
-  else if (e.target.closest('[data-deck-agent]')) agentCards(k);
+  else if (e.target.closest('[data-deck-agent]')) AI.deckCards(k);
   else if (e.target.closest('[data-deck-reset]')) ask(t('learn.resetAsk', {name: k.name})).then(ok => ok && change(() => { k.cards.forEach(c => { c.box = 0; c.due = ''; }); }));
 });
 
 const A = {
-  agentOpen: () => window.AgentLink && AgentLink.open(),
   agentAdd: () => {
     const el = $('#agentIn'), text = el ? el.value.trim() : '';
     if (!text) { if (el) el.focus(); return; }
-    AgentLink.sendNow({title: text.slice(0, 60), kind: 'plan-entries', task: t('agent.addTask', {text}) + '\n' + agentContext(), level: 'read', web: false,
-      format: '{"tasks": [{"title": "…", "subject": "…", "due": "YYYY-MM-DD"}], "events": [{"type": "exam|test|talk|deadline|other", "title": "…", "subject": "…", "date": "YYYY-MM-DD", "time": "HH:MM"}]}'});
+    AI.entries(text);
     el.value = '';
-    toast(t('agent.sent'));
+    toast(t('ai.working'));
   },
-  agentStudy: () => {
-    const d = today(), exams = plan.events.filter(e => STUDY_TYPES.includes(e.type) && validIso(e.date) && e.date >= d && dayDiff(d, e.date) <= 42).sort((a, b) => a.date.localeCompare(b.date));
-    if (!exams.length) { toast(t('agent.noExams')); return; }
-    const list = exams.map(e => `- ${e.date} · ${t('type.' + e.type)} · ${(subj(e.subject) || {}).name || ''}${e.title ? ' · ' + e.title : ''}${e.notes ? ' (' + e.notes.slice(0, 200) + ')' : ''}`).join('\n');
-    const work = window.Shared && (Shared.values || {}).workFolder;
-    AgentLink.sendNow({title: t('agent.studyTitle'), kind: 'study-plan', task: t('agent.studyTask', {list, mins: studyCfg().perDay || 60}) + '\n' + agentContext() + (work ? '\n' + t('agent.studyWork') : ''),
-      dir: work || '', level: 'read', web: false});
-    toast(t('agent.sent'));
-  },
+  agentStudy: () => { toast(t('ai.working')); AI.studyPlan(); },
+  aiSettings: () => openSettings('ai'),
+  viewFiles: () => setView('files'),
   newTask: () => { setView('tasks'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
   newEvent: () => { setView('events'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
   newSubject: () => { setView('subjects'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
@@ -2123,9 +2082,9 @@ const A = {
 const MENUS = [
   ['file', [['importPlan', 'Ctrl+O'], ['exportBackup', 'Ctrl+S'], '-', ['exportIcs', 'Ctrl+E'], ['print', 'Ctrl+P']]],
   ['edit', [['undo', 'Ctrl+Z', null, false, ['Ctrl+Shift+Z']], ['redo', 'Ctrl+Y'], '-', ['deleteSel', 'Delete', null, true]]],
-  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newDeck', 'Ctrl+L'], ['newFolder'], ['searchCards', 'Ctrl+F'], ['newSubject'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
+  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newDeck', 'Ctrl+L'], ['newFolder'], ['searchCards', 'Ctrl+F'], ['newSubject'], '-', ['agentStudy'], ['aiSettings'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
   ['view', [['viewToday', 'Alt+1', () => settings.view === 'today'], ['viewWeek', 'Alt+2', () => settings.view === 'week'], ['viewTasks', 'Alt+3', () => settings.view === 'tasks'],
-    ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], ['viewGrades', 'Alt+6', () => settings.view === 'grades'], ['viewLearn', 'Alt+7', () => settings.view === 'learn'], '-',
+    ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], ['viewGrades', 'Alt+6', () => settings.view === 'grades'], ['viewLearn', 'Alt+7', () => settings.view === 'learn'], ['viewFiles', 'Alt+8', () => settings.view === 'files'], '-',
     ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
   ['settings', [['settings', 'Ctrl+,'], '-', '#menu.language',
     ['langAuto', null, () => settings.lang === 'auto'], ['langEn', null, () => settings.lang === 'en'], ['langDe', null, () => settings.lang === 'de'],
@@ -2182,6 +2141,7 @@ const ICONS = {
   events: SV('<path d="M12 2 3 6v6c0 5 4 9 9 10 5-1 9-5 9-10V6z"/><path d="m9 12 2 2 4-4"/>'),
   subjects: SV('<path d="M4 19V5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h13"/>'),
   grades: SV('<path d="M4 20h16M7 16V10M12 16V5M17 16v-8"/>'),
+  files: SV('<path d="M3 6.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
   learn: SV('<rect x="2.5" y="7" width="14" height="13" rx="2"/><path d="M7.5 7V5.5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3"/><path d="M6 13.5h7"/>'),
   open: SV('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
   save: SV('<path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8M7 21v-7h10v7"/>'),
@@ -2203,7 +2163,7 @@ function buildToolbars() {
   fill('#fileBtns', [['importPlan', ICONS.open], ['exportBackup', ICONS.save], ['undo', ICONS.undo], ['redo', ICONS.redo]]);
   fill('#viewBtns', [['exportIcs', ICONS.ics], ['print', ICONS.print], ['togglePanels', ICONS.panel], ['settings', ICONS.gear], ['shortcuts', ICONS.help]]);
   const tools = $('#tools'); tools.innerHTML = '';
-  [['viewToday', 'today'], ['viewWeek', 'week'], ['viewTasks', 'tasks'], ['viewEvents', 'events'], ['viewGrades', 'grades'], ['viewLearn', 'learn'], ['viewSubjects', 'subjects']].forEach(([a, i]) => tools.append(makeBtn(a, ICONS[i], 'view')));
+  [['viewToday', 'today'], ['viewWeek', 'week'], ['viewTasks', 'tasks'], ['viewEvents', 'events'], ['viewGrades', 'grades'], ['viewLearn', 'learn'], ['viewFiles', 'files'], ['viewSubjects', 'subjects']].forEach(([a, i]) => tools.append(makeBtn(a, ICONS[i], 'view')));
   $('#ctxBar').innerHTML = '';
   $$('[data-act="togglePanels"]').forEach(b => b.classList.toggle('active', settings.dock));
   syncDisabled();
@@ -2222,6 +2182,7 @@ $('#modalClose').onclick = closeModal;
 $('#modal').onmousedown = e => { if (e.target.id === 'modal') closeModal(); };
 function openSettings(section) {
   if (section) prefsSection = section;
+  if (prefsSection === 'ai') AI.check();
   $('.modal').classList.add('wide'); $('#modalFoot').hidden = false;
   settingsOpen = true; renderSettings(); $('#modal').classList.add('show');
 }
@@ -2347,9 +2308,10 @@ function renderSettings() {
         <h3>${esc(t('cal.howTitle'))}</h3><p class="hint"><b>Google:</b> ${esc(t('cal.howGoogle'))}</p><p class="hint"><b>Apple / iCloud:</b> ${esc(t('cal.howApple'))}</p>
         <p class="hint"><b>Outlook:</b> ${esc(t('cal.howOutlook'))}</p><p class="hint">${esc(t('cal.secret'))}</p>`;
     })(),
+    ai: AI.settingsHtml(),
     keys: '<div id="keysBox"></div>'
   };
-  const sections = ['general', 'appearance', 'timetable', 'year', 'electives', 'grades', 'study', 'calendars', 'mycal', 'keys'];
+  const sections = ['general', 'appearance', 'timetable', 'year', 'electives', 'grades', 'study', 'calendars', 'mycal', 'ai', 'keys'];
   $('#modalTitle').textContent = t('set.title');
   $('#modalBody').innerHTML = `<div class="prefs"><nav>${sections.map(k =>
     `<button data-sec="${k}" class="${k === prefsSection ? 'active' : ''}">${esc(t('set.' + k))}</button>`).join('')}</nav><section>${body[prefsSection]}</section></div>`;
@@ -2588,7 +2550,7 @@ window.addEventListener('keydown', e => {
 }
 
 /* Test hook (like Md's __md / Dt's __dt). */
-window.__pl = {get plan() { return plan; }, get sel() { return sel; }, get drill() { return drill; }, get settings() { return settings; }, A, run,
+window.__pl = {AI, Files, get plan() { return plan; }, get sel() { return sel; }, get drill() { return drill; }, get settings() { return settings; }, A, run,
   cleanFolder, allFolders, decksIn, moveDeck, renameFolder, deleteFolder, remindInfo, remindText, checkRemind, snoozeRemind, nextLesson, setView, change, agentEntries, checkAnswer, parseCards, startDrill, drillAnswer, agentCardList, agentTakeCards};
 
 /* ================= Boot ================= */
@@ -2620,7 +2582,7 @@ window.__pl = {get plan() { return plan; }, get sel() { return sel; }, get drill
   booted = true;
   applySettings();
   renderAll();
-  agentInit();
+  AI.init();
   // The date changes at midnight; the current period every few minutes.
   setInterval(() => { checkRemind(); if (!typing()) { renderView(); updateStatus(); } }, 60000);
   setTimeout(() => checkRemind(), 4000);   // started after the reminder time: remind once now

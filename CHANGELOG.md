@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.9.0 — 2026-11-05
+- New: **Files** (Alt+8) — your school folder (by default the work folder of Studio Hub): browse, search, new folder,
+  one folder per subject with one click, add files (copied in), rename, move (drag onto a folder or the path), into the
+  system's trash and back, open with the usual program, show in Finder / Explorer, a preview of text and Markdown files.
+  A file gets a subject (or takes it from its folder) and can be attached to homework or a date — they show it in their details.
+- New: **Claude for school, right in Plan Studio** (before through Agent Studio): Today's "AI assistant" turns homework
+  and dates in your own words into entries and suggests a study plan; decks get flashcards from Claude directly; for a
+  file or a folder: study sheet and quiz (as a new Markdown file next to it), flashcards (a new deck), summary and
+  explanation. Claude only reads (the file or folder asked about), changes nothing and has no internet; Plan Studio makes
+  the new files itself, never over an existing one. Settings → AI (Claude): find Claude Code, sign in, model.
+
 ## 1.8.1 — 2026-11-03
 - Fix (macOS): the app no longer asks again and again for access to your Documents folder (or Desktop, Downloads). The app is now signed as a whole, so macOS can remember your answer. After an update, macOS may ask once more.
 

@@ -418,6 +418,31 @@ details.more{margin:10px 0}
 details.more summary{cursor:pointer;color:var(--dim);font-size:12px;margin-bottom:6px}
 .warn-row{color:var(--warn)}
 .agent-quick{display:flex;gap:6px;margin-top:8px}.agent-quick .field-in{flex:1;height:28px}
+/* Files (files.js) and the AI for school (ai.js) */
+.files-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.files-bar .field-in{width:220px;height:28px}
+.crumbs{display:flex;align-items:center;gap:2px;min-width:0;flex-wrap:wrap}
+.crumb{background:none;border:1px solid transparent;border-radius:var(--radius);padding:3px 8px;color:var(--text);cursor:pointer;font:inherit;font-size:13px}
+.crumb:hover{background:var(--hover)}
+.crumb:last-child{color:var(--strong);font-weight:600}
+.crumb-sep{color:var(--dim)}
+.files-list{padding:4px}
+.frow{gap:10px}
+.frow .ficon{width:20px;text-align:center;font-size:15px;flex:none}
+.frow .fdate{width:96px;text-align:right;flex:none}.frow .fsize{width:70px;text-align:right;flex:none}
+.frow.drop-on,.crumb.drop-on{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--hover)}
+.files-note{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 12px;border-radius:var(--radius);background:var(--card-bg);border:1px solid var(--card-border)}
+.files-empty{text-align:center;padding:50px 20px;color:var(--dim)}.files-empty .big{font-size:48px}.files-empty h2{color:var(--strong);font-size:17px;margin:10px 0 6px}
+.files-empty p{max-width:480px;margin:6px auto;line-height:1.6}
+.file-head{display:flex;align-items:center;gap:8px;margin:0 0 8px}.file-head b{color:var(--strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ficon.big{font-size:26px}
+.fbtns{display:flex;gap:6px;flex-wrap:wrap}
+.ai-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.fpreview{font:11.5px/1.5 Consolas,Menlo,monospace;background:var(--code-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:6px 8px;max-height:260px;overflow:auto;white-space:pre-wrap;user-select:text}
+.ai-answer{white-space:pre-wrap;line-height:1.6;user-select:text;font-size:13px}
+.ai-answer pre{background:var(--code-bg);padding:8px;border-radius:var(--radius);white-space:pre-wrap}
+.ai-answer code{background:var(--code-bg);padding:0 4px;border-radius:3px}
+.ai-answer .md-h{display:inline-block;font-size:14px;color:var(--strong);margin-top:4px}
 .row.warn-row{font-weight:600}
 /* Learn: decks, card list, practice */
 .deck-card{cursor:pointer}.deck-card:hover{border-color:var(--accent)}
@@ -562,7 +587,8 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 <script src="autohide.js"></script>
 <script src="shortcuts.js"></script>
 <script src="shared.js"></script>
-<script src="agentlink.js"></script>
+<script src="ai.js"></script>
+<script src="files.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

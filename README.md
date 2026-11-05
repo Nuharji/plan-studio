@@ -26,7 +26,7 @@ and controls as the other Studio apps.
 - **Study planner:** topics to tick off per exam, test or presentation, a study plan spread over the days before it
   (minutes per day, other exams included, after school), "Study today" with a study timer and minutes learned per subject
 - **Learn:** flashcards and vocabulary in decks (per subject, and for an exam if you like): type them in, paste a list
-  (from Excel, Quizlet, a vocabulary list) or let Claude make them through Agent Studio. Practise by turning over, typing
+  (from Excel, Quizlet, a vocabulary list) or let Claude make them. Practise by turning over, typing
   the answer (small typos and umlaut spellings count) or picking one of four, in either direction; the Leitner system
   brings back what you didn't know soon and what you know rarely. Due cards show in Today, the minutes practised count
   as learned for the subject. Decks go into folders and subfolders (drag a deck onto a folder; learn a whole folder at
@@ -41,6 +41,12 @@ and controls as the other Studio apps.
   both kept up to date after every change
 - **Linked calendars:** paste the subscription address of a Google, Apple / iCloud or Outlook calendar (https:// or webcal://);
   its events show in Today and in the next 7 days, refresh every 30 minutes and stay available offline (read-only)
+- **Files** (Alt+8): your school folder (by default Studio Hub's work folder) — browse, search, new folder, one folder
+  per subject, add files (copied in), rename, move by dragging, into the system's trash and back, open, show in Finder /
+  Explorer, preview of text files; give a file a subject and attach it to homework or a date
+- **Claude for school** (Claude Code with your own sign-in, Settings → AI): homework and dates in your own words, a study
+  plan for the next exams, flashcards for a deck, and for a file or folder a study sheet, a quiz, flashcards, a summary
+  or an explanation. Claude only reads and has no internet; new files are made by Plan Studio, never over an existing one
 - 4 app themes, settings dialog, customizable shortcuts, auto-hide bars, German/English
 
 The plan is saved in the app's data folder (`plan.json`, the previous version as `plan.bak`); a `plan.json` next to the
@@ -75,8 +81,8 @@ Windows, and `plan-studio` (or the AppImage) on Linux.
 
 ## Layout
 ```
-ui/                 index.html, app.js; native.js, autohide.js, shortcuts.js (the same in every Studio app)
-src-tauri/src/      main.rs — saving, import / export, dialogs, print; ics.rs — the calendar file; ical.rs — reading linked calendars
+ui/                 index.html, app.js; files.js — Files; ai.js — Claude for school; native.js, autohide.js, shortcuts.js (the same in every Studio app)
+src-tauri/src/      main.rs — saving, import / export, dialogs, print; files.rs — the school folder; ai.rs — Claude for school; ics.rs — the calendar file; ical.rs — reading linked calendars
 src-tauri/i18n/     en.json, de.json — all texts
 ```
 

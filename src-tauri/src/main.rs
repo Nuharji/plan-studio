@@ -1,7 +1,9 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai;
 mod caldav;
+mod files;
 mod feed;
 mod agentlink;
 mod mcp;
@@ -251,6 +253,25 @@ fn main() {
             agentlink::agent_open,
             agentlink::agent_open_file,
             texts,
+            ai::ai_status,
+            ai::ai_login,
+            ai::ai_ask,
+            ai::ai_stop,
+            files::files_list,
+            files::files_search,
+            files::files_mkdir,
+            files::files_mkdirs,
+            files::files_rename,
+            files::files_move,
+            files::files_import,
+            files::files_write,
+            files::files_text,
+            files::files_trash,
+            files::files_untrash,
+            files::files_open,
+            files::files_reveal,
+            files::files_pick_folder,
+            files::files_pick,
             plan_load,
             plan_save,
             plan_stamp,
