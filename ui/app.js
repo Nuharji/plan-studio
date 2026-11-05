@@ -256,7 +256,7 @@ function currentPeriod() {
 }
 
 /* ================= Settings, history, saving ================= */
-const THEMES = ['dark', 'light', 'github', 'github-dark'];
+const THEMES = ['dark', 'light', 'github', 'github-dark', 'cli'];
 const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, dockTab: 'details', view: 'today', showDone: false, icsTasks: true, icsWeeks: 0, feedOn: false, filesRoot: '', aiClaude: '', aiModel: ''};
 let settings = {...DEF}, sel = null, booted = false, saveT = 0, dirty = false;
 const hist = {back: [], fwd: []};
@@ -2062,7 +2062,7 @@ const A = {
   settings: () => openSettings(), timetableSettings: () => openSettings('timetable'), calendarSettings: () => openSettings('calendars'),
   refreshCalendars: () => { if (!invoke) return toast(t('cal.appOnly')); refreshCalendars().then(() => toast(t('cal.refreshed'))); },
   langAuto: () => setLang('auto'), langEn: () => setLang('en'), langDe: () => setLang('de'),
-  themeDark: () => setTheme('dark'), themeLight: () => setTheme('light'), themeGithub: () => setTheme('github'), themeGithubDark: () => setTheme('github-dark'),
+  themeDark: () => setTheme('dark'), themeLight: () => setTheme('light'), themeGithub: () => setTheme('github'), themeGithubDark: () => setTheme('github-dark'), themeCli: () => setTheme('cli'),
   shortcuts: () => {
     let h = '';
     MENUS.forEach(([m, items]) => {
@@ -2090,7 +2090,7 @@ const MENUS = [
     ['langAuto', null, () => settings.lang === 'auto'], ['langEn', null, () => settings.lang === 'en'], ['langDe', null, () => settings.lang === 'de'],
     '-', '#menu.theme',
     ['themeDark', null, () => settings.theme === 'dark'], ['themeLight', null, () => settings.theme === 'light'],
-    ['themeGithub', null, () => settings.theme === 'github'], ['themeGithubDark', null, () => settings.theme === 'github-dark']]],
+    ['themeGithub', null, () => settings.theme === 'github'], ['themeGithubDark', null, () => settings.theme === 'github-dark'], ['themeCli', null, () => settings.theme === 'cli']]],
   ['help', [['shortcuts', 'F1'], '-', ['about']]]
 ];
 const allowed = act => !!plan && (act !== 'undo' || hist.back.length > 0) && (act !== 'redo' || hist.fwd.length > 0) && (act !== 'deleteSel' || !!sel);
