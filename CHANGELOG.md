@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.0 — 2026-11-05
+- New: own theme and layout for this app. Settings → Appearance → "Only for this app": the theme and layout you choose here stay with Plan Studio; "Like Studio Hub" (default) keeps it looking like all Studio apps. Also settable in Studio Hub 1.13 → Theme per app.
+
 ## 1.9.0 — 2026-11-05
 - New: **Files** (Alt+8) — your school folder (by default the work folder of Studio Hub): browse, search, new folder,
   one folder per subject with one click, add files (copied in), rename, move (drag onto a folder or the path), into the

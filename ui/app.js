@@ -2214,7 +2214,7 @@ function renderSettings() {
       ${settings.feedOn && feedUrl ? `<div class="ed-field"><input class="field-in" readonly value="${esc(feedUrl)}" style="width:100%;max-width:560px"></div>
         <p><button class="btn-sm primary" data-mycal="open">${esc(t('mycal.openApp'))}</button> <button class="btn-sm" data-mycal="copy">${esc(t('mycal.copy'))}</button></p>
         <p class="hint">${esc(t('mycal.feedHow'))}</p>` : ''}`}`,
-    appearance: `<h3>${esc(t('set.theme'))}</h3><div class="theme-grid">` + THEMES.map(th =>
+    appearance: (window.Shared ? Shared.scopePicker() : '') + `<h3>${esc(t('set.theme'))}</h3><div class="theme-grid">` + THEMES.map(th =>
       `<button class="theme-card${settings.theme === th ? ' active' : ''}" data-theme-pick="${th}">${mock(th)}
        <div class="theme-name">${esc(t('theme.' + th))}<span>${settings.theme === th ? '&#10003;' : ''}</span></div></button>`).join('') + '</div>' + (window.Shared ? Shared.layoutHeading() : ''),
     timetable: `<h3>${esc(t('set.days'))}</h3><select class="wide-sel" data-plan="days">${opt(5, t('set.days5'), plan.days)}${opt(6, t('set.days6'), plan.days)}</select>
@@ -2560,7 +2560,7 @@ window.__pl = {AI, Files, get plan() { return plan; }, get sel() { return sel; }
   try { saved = JSON.parse(localStorage.getItem(STORE)); } catch (e) {}
   if (saved && saved.settings) settings = {...DEF, ...saved.settings};
   // Theme and language shared by all Studio apps (shared.js); the shared values win over this app's own.
-  if (window.Shared) await Shared.init({apply: sh => {
+  if (window.Shared) await Shared.init({app: 'pl', apply: sh => {
     if (sh.theme) settings.theme = sh.theme;
     if (sh.lang) settings.lang = sh.lang;
     if (booted) applySettings();
