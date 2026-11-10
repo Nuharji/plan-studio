@@ -508,12 +508,18 @@ function learnedSince(from) {
 let timer = null;
 function startTimer(sessionId) {
   const x = sessions().find(y => y.id === sessionId); if (!x) return;
-  const cfg = studyCfg();
-  timer = {id: x.id, phase: 'work', left: cfg.work * 60, running: true, last: Date.now()};
+  const len = workLen(x);
+  timer = {id: x.id, phase: 'work', len, left: len * 60, running: true, last: Date.now()};
   drawTimer();
 }
+/* How long the next work phase is: what is left of the session, split into phases of the set work time — a rest shorter
+   than half a phase goes into this one (a 30-minute session is one 30-minute phase, not 25 + 5). */
+function workLen(x) {
+  const work = Math.max(1, +studyCfg().work || 25), left = Math.max(1, (+x.minutes || work) - (+x.learned || 0));
+  return left - work < work / 2 ? left : work;
+}
 function stopTimer(save = true) {
-  if (timer && save && timer.phase === 'work') logStudy(timer.id, Math.floor((studyCfg().work * 60 - timer.left) / 60));
+  if (timer && save && timer.phase === 'work') logStudy(timer.id, Math.floor((timer.len * 60 - timer.left) / 60));
   timer = null; drawTimer();
 }
 function logStudy(id, minutes) {
@@ -531,10 +537,12 @@ setInterval(() => {
   const now = Date.now(); timer.left -= (now - timer.last) / 1000; timer.last = now;
   if (timer.left <= 0) {
     const cfg = studyCfg(); beep();
-    if (timer.phase === 'work') { logStudy(timer.id, cfg.work); const x = sessions().find(y => y.id === timer.id);
+    if (timer.phase === 'work') { logStudy(timer.id, timer.len); const x = sessions().find(y => y.id === timer.id);
       if (!x || x.done) { toast(t('study.sessionDone')); timer = null; drawTimer(); return; }
       timer.phase = 'rest'; timer.left = cfg.rest * 60; toast(t('study.restNow')); }
-    else { timer.phase = 'work'; timer.left = cfg.work * 60; toast(t('study.workNow')); }
+    else { const x = sessions().find(y => y.id === timer.id);
+      if (!x || x.done) { timer = null; drawTimer(); return; }
+      timer.phase = 'work'; timer.len = workLen(x); timer.left = timer.len * 60; toast(t('study.workNow')); }
   }
   drawTimer();
 }, 500);
@@ -995,7 +1003,8 @@ function renderDetails() {
           ${ss.length ? `<div class="sessions">${ss.map(x => `<div class="sess${x.done ? ' done' : ''}"><span>${esc(fmtDate(x.date))} · ${esc(sessionStart(x))}</span><span class="grow">${esc(x.topic || '')}</span><span class="meta">${esc(t('study.min', {n: x.minutes}))}</span><button class="x" data-sess-del="${x.id}" title="${esc(t('a.delete'))}">×</button></div>`).join('')}</div>` : ''}
           ${(() => { const ks = decks().filter(k => k.event === e.id || (!k.event && e.subject && k.subject === e.subject));
             return `<div class="sect">${esc(t('learn.cardsFor'))}</div>${ks.map(k => `<div class="sess"><span class="grow">${esc(k.name)}</span><span class="meta">${esc(t('learn.nDue', {n: dueCards(k).length}))}</span><button class="btn-sm" data-open-deck="${k.id}">${esc(t('learn.open'))}</button></div>`).join('')}
-              <p><button class="btn-sm" data-deck-for="${e.id}">${esc(t('learn.deckFor'))}</button></p>`; })()}`;
+              <p><button class="btn-sm" data-deck-for="${e.id}">${esc(t('learn.deckFor'))}</button></p>`; })()}
+          ${PTest.section({event: e.id})}`;
       })() : ''}
       ${Files.attached('event', e.id)}
       <p><button class="btn-sm" data-copy-week>${esc(t('ui.copyWeek'))}</button> ${['exam', 'test', 'talk'].includes(e.type) ? `<button class="btn-sm" data-grade-for="${e.id}">${esc(t(grades().some(g => g.event === e.id) ? 'grade.showForEvent' : 'grade.forEvent'))}</button> ` : ''}<button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
@@ -1664,7 +1673,7 @@ function prepCard() {
   drill.rev = drill.dir === 'ba' || (drill.dir === 'mix' && Math.random() < 0.5);
   drill.shown = false; drill.result = null; drill.picked = null; drill.typed = '';
   if (drill.mode === 'choice') {
-    const ans = drill.rev ? c.front : c.back, seen = new Set([normAnswer(ans)]), others = [];
+    const ans = drill.rev ? c.front : c.back, seen = new Set(drillAnswers(c).map(normAnswer)), others = [];
     // Wrong answers from the card's own deck first, then from the other decks of the round.
     const pool = [...shuffle(k.cards.filter(x => x !== c)), ...shuffle(drill.decks.filter(id => id !== k.id).flatMap(id => (deckOf(id) || {cards: []}).cards))];
     for (const o of pool) { const v = drill.rev ? o.front : o.back, n = normAnswer(v); if (!seen.has(n)) { seen.add(n); others.push(v); } if (others.length === 3) break; }
@@ -1706,15 +1715,25 @@ function stopDrill() {
   if (drill.done || !drill.seen.size) { drill = null; renderAll(); return; }
   finishDrill(); renderAll();
 }
+/* Every answer to the side asked: the card's own and those of the round's cards with the same question (a word with
+   several translations, entered as several cards: "bank" → "Bank" and "bank" → "Ufer"). */
+function drillAnswers(c) {
+  const asked = x => normAnswer(drill.rev ? x.back : x.front), q = asked(c), side = x => drill.rev ? x.front : x.back;
+  const more = drill.decks.flatMap(id => (deckOf(id) || {cards: []}).cards).filter(x => x !== c && q && asked(x) === q).map(side);
+  const seen = new Set(), list = [];
+  for (const a of [side(c), ...more]) { const n = normAnswer(a); if (n && !seen.has(n)) { seen.add(n); list.push(a); } }
+  return list;
+}
 function drillCheck() {
   const c = drillCard(), inp = $('#drillIn'); if (!c || drill.result) return;
   drill.typed = inp ? inp.value : '';
-  drill.result = checkAnswer(drill.typed, drill.rev ? c.front : c.back);
+  const rs = drillAnswers(c).map(a => checkAnswer(drill.typed, a));
+  drill.result = rs.includes('right') ? 'right' : rs.includes('almost') ? 'almost' : 'wrong';
   renderView();
 }
 function drillPick(i) {
   const c = drillCard(); if (!c || drill.result || !drill.opts || i >= drill.opts.length) return;
-  drill.picked = i; drill.result = normAnswer(drill.opts[i]) === normAnswer(drill.rev ? c.front : c.back) ? 'right' : 'wrong';
+  drill.picked = i; drill.result = drillAnswers(c).map(normAnswer).includes(normAnswer(drill.opts[i])) ? 'right' : 'wrong';
   renderView();
 }
 function drillHtml() {
@@ -1729,7 +1748,9 @@ function drillHtml() {
       <div class="drill-btns">${drill.wrongIds.size ? `<button class="btn-sm primary" data-dr="retry">${esc(t('learn.retry', {n: drill.wrongIds.size}))}</button>` : ''}
         <button class="btn-sm${drill.wrongIds.size ? '' : ' primary'}" data-dr="close">${esc(t(drill.search ? 'learn.backToSearch' : drillFolder() ? 'learn.backToFolder' : 'learn.backToDeck'))} <kbd>Enter</kbd></button></div></div>`;
   }
-  const c = drillCard(), ask = drill.rev ? c.back : c.front, ans = drill.rev ? c.front : c.back;
+  const c = drillCard(), ask = drill.rev ? c.back : c.front, answers = drillAnswers(c), ans = answers.join('; ');
+  // The whole answer is shown unless exactly it was typed (one of several translations, or without the part in brackets, is not all of it).
+  const exact = answers.length === 1 && drill.typed.trim().replace(/\s+/g, ' ').toLowerCase() === ans.trim().replace(/\s+/g, ' ').toLowerCase();
   const total = drill.queue.length, pr = Math.round(drill.pos / total * 100);
   const askSide = sideName(k, drill.rev), ansSide = sideName(k, !drill.rev);
   let body = '', btns = '';
@@ -1740,13 +1761,14 @@ function drillHtml() {
   } else if (drill.mode === 'write') {
     const r = drill.result;
     body = `<div class="fl-line"></div><div class="fl-side">${esc(ansSide)}</div>` + (r
-      ? `<div class="fl-typed ${r}">${esc(drill.typed || '—')}</div><div class="fl-verdict ${r}">${esc(t('learn.r.' + r))}</div>${r === 'right' && normAnswer(drill.typed) === normAnswer(ans) ? '' : `<div class="fl-a">${esc(ans)}</div>`}`
+      ? `<div class="fl-typed ${r}">${esc(drill.typed || '—')}</div><div class="fl-verdict ${r}">${esc(t('learn.r.' + r))}</div>${r === 'right' && exact ? '' : `<div class="fl-a">${esc(ans)}</div>`}`
       : `<input class="field-in drill-in" id="drillIn" autocomplete="off" spellcheck="false" placeholder="${esc(t('learn.typePh'))}" value="${esc(drill.typed)}">`);
     btns = r ? `${r === 'wrong' ? `<button class="btn-sm" data-dr="override">${esc(t('learn.override'))}</button>` : r === 'almost' ? `<button class="btn-sm no" data-dr="notKnown">✗ ${esc(t('learn.notKnown'))} <kbd>1</kbd></button>` : ''}<button class="btn-sm primary" data-dr="next">${esc(t('learn.next'))} <kbd>Enter</kbd></button>`
       : `<button class="btn-sm" data-dr="dunno">${esc(t('learn.dunno'))}</button><button class="btn-sm primary" data-dr="check">${esc(t('learn.check'))} <kbd>Enter</kbd></button>`;
   } else {
-    const right = i => normAnswer(drill.opts[i]) === normAnswer(ans);
-    body = `<div class="fl-line"></div><div class="fl-side">${esc(ansSide)}</div><div class="choices">${drill.opts.map((o, i) => `<button class="choice${drill.result ? right(i) ? ' right' : i === drill.picked ? ' wrong' : '' : ''}" data-pick="${i}"${drill.result ? ' disabled' : ''}><kbd>${i + 1}</kbd><span>${esc(o)}</span></button>`).join('')}</div>`;
+    const ok = answers.map(normAnswer), right = i => ok.includes(normAnswer(drill.opts[i]));
+    body = `<div class="fl-line"></div><div class="fl-side">${esc(ansSide)}</div><div class="choices">${drill.opts.map((o, i) => `<button class="choice${drill.result ? right(i) ? ' right' : i === drill.picked ? ' wrong' : '' : ''}" data-pick="${i}"${drill.result ? ' disabled' : ''}><kbd>${i + 1}</kbd><span>${esc(o)}</span></button>`).join('')}</div>`
+      + (drill.result && answers.length > 1 ? `<div class="fl-a">${esc(ans)}</div>` : '');
     btns = drill.result ? `<button class="btn-sm primary" data-dr="next">${esc(t('learn.next'))} <kbd>Enter</kbd></button>` : '';
   }
   return `<div class="drill"><div class="drill-top"><button class="btn-sm" data-dr="stop" title="Esc">✕ ${esc(t('learn.stop'))}</button><span class="grow">${drill.search ? `${esc(t('learn.searchFor', {q: learnQuery.trim()}))} · ` : drillFolder() ? `${FOLDER_ICON} ${esc(drill.target.folder ? folderName(drill.target.folder) : t('learn.allDecks'))} · ` : ''}${chip(subj(k.subject))} ${esc(k.name)}${drill.all ? ` · ${esc(t('learn.practiceAll'))}` : ''}</span>
@@ -1907,6 +1929,7 @@ function deckDetails(box, field) {
     <p class="pick-btns"><button class="btn-sm" data-deck-import>${esc(t('learn.import'))}</button><button class="btn-sm" data-deck-export${k.cards.length ? '' : ' disabled'}>${esc(t('learn.export'))}</button>
       ${k.cards.some(c => c.box) ? `<button class="btn-sm" data-deck-reset>${esc(t('learn.reset'))}</button>` : ''}</p>
     ${invoke ? `<p><button class="btn-sm" data-deck-agent>${esc(t('learn.agent'))}</button></p><p class="meta">${esc(t('learn.agentHint'))}</p>` : ''}
+    ${PTest.section({deck: k.id})}
     <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('learn.deleteDeck'))}</button></p>`;
 }
 function importCards(deckId) {

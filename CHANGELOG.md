@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.14.0 — 2026-11-10
+- New: **practice tests** for an exam, test or presentation (details → "Practice tests") and for a deck. Claude makes one
+  like a teacher would set it — from the exam's topics, notes and cards and your files in the school folder — with
+  multiple-choice and open questions, points and model answers; "Practice test from cards" makes one right away from the
+  cards (picking and typing, works without Claude). Hand it in and see the points, the percent and roughly the grade in
+  your school's scale; open questions you mark yourself against the model answer. Every try is kept, the time counts as learned.
+- Fix: the study timer no longer always runs 25 minutes. A work phase is now as long as what is left of the session
+  (a 30-minute session is one 30-minute phase); longer sessions are split into phases of the set work time with breaks.
+- Fix: vocabulary with several translations — after typing one of them, all translations of the word are shown now
+  (also the part in brackets). A word entered as several cards ("bank" → "Bank", "bank" → "Ufer") accepts and shows
+  every translation, in typing and in picking one of four (no other right translation is offered as a wrong answer).
+
 ## 1.13.0 — 2026-11-05
 - New: four more CLI themes with other accent colors — CLI Amber, CLI Cyan, CLI Magenta and CLI White (black, monospace, square, like CLI (Terminal), just not green). Choose them like the other themes (Settings → Appearance or Settings menu → Theme).
 
