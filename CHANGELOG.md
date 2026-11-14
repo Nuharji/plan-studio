@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.15.0 — 2026-11-14
+- New: the app logo follows the theme — the logo in the menu bar, the big tile on the start page and, while the app runs, the icon in the Dock (macOS) and the taskbar / window icon (Windows, Linux). CLI themes: black with the accent color and an edge in it; High contrast: black and white with a yellow edge; Graphite: gray with the logo in the app's color; GitHub and Sand: a light card; GitHub Dark, Midnight and Dusk: tinted with the theme; Light and Rosé: the light tile. Dark keeps the usual icon.
+
 ## 1.14.0 — 2026-11-10
 - New: **practice tests** for an exam, test or presentation (details → "Practice tests") and for a deck. Claude makes one
   like a teacher would set it — from the exam's topics, notes and cards and your files in the school folder — with

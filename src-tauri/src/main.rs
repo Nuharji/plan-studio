@@ -1,6 +1,7 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appicon;
 mod ai;
 mod caldav;
 mod files;
@@ -245,6 +246,7 @@ fn main() {
         .manage(feed::Feed::default())
         .manage(caldav::Sync::default())
         .invoke_handler(tauri::generate_handler![
+            appicon::set_dock_icon,
             shared::shared_get,
             shared::shared_set,
             agentlink::agent_send,

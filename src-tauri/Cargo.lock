@@ -2783,9 +2783,10 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "plan-studio"
-version = "1.14.0"
+version = "1.15.0"
 dependencies = [
  "objc2",
+ "objc2-app-kit",
  "objc2-foundation",
  "reqwest 0.12.28",
  "serde",
