@@ -379,7 +379,7 @@ function undo() { if (!hist.back.length) return; wtCache = {}; hist.fwd.push(JSO
 function redo() { if (!hist.fwd.length) return; hist.back.push(JSON.stringify(plan)); plan = JSON.parse(hist.fwd.pop()); fixSel(); persist(); renderAll(); }
 function fixSel() {
   if (!sel) return;
-  const list = {task: plan.tasks, event: plan.events, subject: plan.subjects, grade: grades(), deck: decks()}[sel.kind];
+  const list = {task: plan.tasks, event: plan.events, subject: plan.subjects, grade: grades(), deck: decks(), appt: appts()}[sel.kind];
   if (list && !list.some(x => x.id === sel.id)) sel = null;
 }
 
@@ -429,6 +429,90 @@ function calEventsOn(day) {
 }
 const calRow = e => `<div class="row" title="${esc(e.cal.name)}${e.location ? ' · ' + esc(e.location) : ''}"><span class="chip" style="background:${e.cal.color}22;color:${e.cal.color}"><i style="background:${e.cal.color}"></i>${esc(e.time || t('cal.allDay'))}</span>
   <span class="grow">${esc(e.title)}</span>${e.location ? `<span class="meta">${esc(e.location)}</span>` : ''}</div>`;
+
+/* ================= Calendar mode ================= */
+/* The second tab next to school: just a calendar. Own appointments (plan.appts: title, date [– dateTo], time – end,
+   place, repeat weekly / monthly / yearly [until], color, notes), together with the linked calendars and — when
+   switched on — the school's exams and dates. */
+const CAL_VIEWS = ['calMonth', 'calAgenda'];
+const isCalView = v => CAL_VIEWS.includes(v);
+const inCal = () => isCalView(settings.view);
+const appts = () => plan.appts || [];
+const REPEATS = ['', 'weekly', 'monthly', 'yearly'];
+const APPT_COLOR = '#0ea5e9';
+let calMonth = '', calDay = '';
+const firstOfMonth = iso => iso.slice(0, 8) + '01';
+const addMonths = (iso, n) => { const d = dateOf(firstOfMonth(iso)); d.setMonth(d.getMonth() + n); return isoOf(d); };
+/* Whether an appointment takes place on `day` (repeats follow the first date; several days only without repeat). */
+function occursOn(a, day) {
+  if (!validIso(a.date) || day < a.date) return false;
+  if (day === a.date) return true;
+  if (!a.repeat) return validIso(a.dateTo) && day <= a.dateTo;
+  if (validIso(a.until) && day > a.until) return false;
+  const [, m, d] = a.date.split('-').map(Number), [, m2, d2] = day.split('-').map(Number);
+  if (a.repeat === 'weekly') return dayDiff(a.date, day) % 7 === 0;
+  if (a.repeat === 'monthly') return d === d2;
+  if (a.repeat === 'yearly') return d === d2 && m === m2;
+  return false;
+}
+/* Time shown on a day: only on the first day of an appointment over several days. */
+const apptTime = (a, day) => a.time && (a.repeat || day === a.date) ? a.time + (a.end ? '–' + a.end : '') : '';
+const apptsOn = day => appts().filter(a => occursOn(a, day)).sort((a, b) => (apptTime(a, day) || '').localeCompare(apptTime(b, day) || ''));
+const schoolOn = day => settings.calSchool === false ? [] : plan.events.filter(e => e.type !== 'class' && e.date === day);
+const apptTitle = a => a.title || t('appt.untitled');
+const apptRow = (a, day) => { const c = a.color || APPT_COLOR;
+  return `<div class="row${sel && sel.kind === 'appt' && sel.id === a.id ? ' sel' : ''}" data-appt="${a.id}"><span class="chip" style="background:${c}22;color:${c}"><i style="background:${c}"></i>${esc(apptTime(a, day) || t('cal.allDay'))}</span>
+    <span class="grow">${esc(apptTitle(a))}</span>${a.place ? `<span class="meta">${esc(a.place)}</span>` : ''}${a.repeat ? `<span class="badge" title="${esc(t('appt.rep.' + a.repeat))}">↻</span>` : ''}</div>`; };
+/* Everything on one day as rows (selected-day card, agenda). */
+const dayRows = day => [...apptsOn(day).map(a => apptRow(a, day)), ...schoolOn(day).map(e => eventRow(e, false)), ...calEventsOn(day).map(calRow)];
+function newAppt(date = calDay || today(), fields = {}) {
+  const a = {id: uid(), title: '', date, time: '', end: '', place: '', repeat: '', color: APPT_COLOR, notes: '', ...fields};
+  change(() => { plan.appts = [...appts(), a]; });
+  return a;
+}
+function calNav(month = true) {
+  const d = today();
+  return `<div class="weeknav">${month ? `<button class="btn-sm" data-cmonth="-1" title="${esc(t('cal.prevMonth'))}">‹</button><button class="btn-sm" data-cmonth="0">${esc(t('d.today'))}</button>
+      <button class="btn-sm" data-cmonth="1" title="${esc(t('cal.nextMonth'))}">›</button>` : ''}
+      <label class="meta" style="cursor:pointer"><input type="checkbox" data-calschool${settings.calSchool === false ? '' : ' checked'}> ${esc(t('cal.showSchool'))}</label>
+      ${calendars().length ? '' : `<button class="btn-sm" data-act="calendarSettings">${esc(t('cal.link'))}</button>`}</div>
+    <div class="quick"><input class="field-in title-in" id="qTitle" placeholder="${esc(t('appt.ph'))}"><input type="date" id="qDate" value="${esc(calDay || d)}">
+      <input type="time" id="qTime" title="${esc(t('ui.time'))}"><button class="btn-sm primary" id="qAdd">${esc(t('ui.add'))}</button></div>`;
+}
+function calMonthView() {
+  const d = today(); if (!calDay) calDay = d; if (!calMonth) calMonth = firstOfMonth(calDay);
+  const start = mondayOf(calMonth), last = addDays(addMonths(calMonth, 1), -1), weeks = Math.ceil((dayDiff(start, last) + 1) / 7);
+  const MAX = 4;
+  const cells = Array.from({length: weeks * 7}, (_, i) => {
+    const day = addDays(start, i), hol = holidayOn(day);
+    const items = [...apptsOn(day).map(a => { const c = a.color || APPT_COLOR, tm = apptTime(a, day);
+        return `<span class="ev appt${sel && sel.kind === 'appt' && sel.id === a.id ? ' on' : ''}" data-appt="${a.id}" style="border-left-color:${c}" title="${esc([apptTitle(a), tm, a.place].filter(Boolean).join(' · '))}">${tm ? `<small>${esc(a.time)}</small> ` : ''}${esc(apptTitle(a))}</span>`; }),
+      ...schoolOn(day).map(e => { const s = subj(e.subject);
+        return `<span class="ev ${e.type}${sel && sel.kind === 'event' && sel.id === e.id ? ' on' : ''}" data-event="${e.id}"${s ? ` style="border-left-color:${s.color}"` : ''} title="${esc([t('type.' + e.type), s && s.name, e.title, e.time].filter(Boolean).join(' · '))}">${e.time ? `<small>${esc(e.time)}</small> ` : ''}<b>${esc(t('type.' + e.type))}</b> ${esc(e.title || (s || {}).name || '')}</span>`; }),
+      ...calEventsOn(day).map(e => `<span class="ev cal" style="border-left-color:${e.cal.color}" title="${esc([e.cal.name, e.title, e.time, e.location].filter(Boolean).join(' · '))}">${e.time ? `<small>${esc(e.time)}</small> ` : ''}${esc(e.title)}</span>`)];
+    const cls = ['cm-d', day.slice(0, 7) !== calMonth.slice(0, 7) && 'other', day === d && 'today', day === calDay && 'on', weekday(day) > 4 && 'we'].filter(Boolean).join(' ');
+    return `<div class="${cls}" data-cday="${day}"><div class="cm-n"><span>${+day.slice(8)}</span>${hol ? `<span class="cm-hol" title="${esc(hol.name)}">${esc(hol.name)}</span>` : ''}</div>
+      ${items.slice(0, MAX).join('')}${items.length > MAX ? `<span class="cm-more">${esc(t('cal.more', {n: items.length - MAX}))}</span>` : ''}
+      <button class="dd-add" data-appt-add="${day}" title="${esc(t('a.newAppt'))}">+</button></div>`;
+  }).join('');
+  const rows = dayRows(calDay);
+  return `<div class="view-title"><h1>${esc(fmtDate(calMonth, {month: 'long', year: 'numeric'}))}</h1><span class="sub">${esc(t('cal.monthHint'))}</span></div>
+    ${calNav()}
+    <div class="cm">${Array.from({length: 7}, (_, i) => `<div class="cm-h">${esc(dayName(i, 'short'))}</div>`).join('')}${cells}</div>
+    <div class="pcard" style="margin-top:16px"><h2>${esc(fmtDate(calDay, {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}))}<button class="btn-sm" data-appt-add="${calDay}">${esc(t('ui.add'))}</button></h2>
+      ${rows.length ? rows.join('') : `<div class="empty-s">${esc(t('cal.dayEmpty'))}</div>`}</div>`;
+}
+function calAgendaView() {
+  const d = today(); if (!calDay) calDay = d;
+  const days = Array.from({length: 90}, (_, i) => addDays(d, i)).map(day => [day, dayRows(day)]).filter(([, r]) => r.length);
+  return `<div class="view-title"><h1>${esc(t('view.calAgenda'))}</h1><span class="sub">${esc(t('cal.agendaHint'))}</span></div>
+    ${calNav(false)}
+    ${days.length ? days.map(([day, r]) => `<div class="group-h">${esc(day === d ? t('d.today') : day === addDays(d, 1) ? t('d.tomorrow') : fmtDate(day, {weekday: 'long', day: 'numeric', month: 'long'}))}</div>${r.join('')}`).join('')
+      : `<div class="empty-s">${esc(t('cal.agendaEmpty'))}</div>`}`;
+}
+function moveCalDay(n) {
+  calDay = addDays(calDay || today(), n); calMonth = firstOfMonth(calDay); renderView();
+}
 
 /* ================= Grades ================= */
 /* Grades per subject, in the school's system: 1–6 with tendencies (2+ / 2−, worth ±0.3 or what the school uses),
@@ -669,6 +753,8 @@ function eventRow(e, withDate = true) {
 }
 const VIEWS = {
   files() { return Files.view(); },
+  calMonth() { return calMonthView(); },
+  calAgenda() { return calAgendaView(); },
   today() {
     const d = today(), w = weekday(d), now = currentPeriod();
     const hol = holidayOn(d);
@@ -716,9 +802,9 @@ const VIEWS = {
         <div class="pcard"><h2>${esc(t('ui.nextDates'))}<button class="btn-sm" data-act="newEvent">${esc(t('ui.add'))}</button></h2>
           ${nextEvents.length ? nextEvents.map(e => eventRow(e, false)).join('') : `<div class="empty-s">${esc(t('ui.noDates'))}</div>`}</div>
         <div class="pcard"><h2>${esc(t('cal.card'))}<button class="btn-sm" data-act="calendarSettings">${esc(t(calendars().length ? 'cal.manage' : 'cal.link'))}</button></h2>
-          ${calendars().length ? (() => {
-            const days = Array.from({length: 7}, (_, i) => addDays(d, i)).map(day => [day, calEventsOn(day)]).filter(([, l]) => l.length);
-            return days.length ? days.map(([day, l]) => `<div class="group-h">${esc(day === d ? t('d.today') : day === addDays(d, 1) ? t('d.tomorrow') : fmtDate(day, {weekday: 'long', day: 'numeric', month: 'short'}))}</div>${l.map(calRow).join('')}`).join('')
+          ${calendars().length || appts().length ? (() => {
+            const days = Array.from({length: 7}, (_, i) => addDays(d, i)).map(day => [day, [...apptsOn(day).map(a => apptRow(a, day)), ...calEventsOn(day).map(calRow)]]).filter(([, l]) => l.length);
+            return days.length ? days.map(([day, l]) => `<div class="group-h">${esc(day === d ? t('d.today') : day === addDays(d, 1) ? t('d.tomorrow') : fmtDate(day, {weekday: 'long', day: 'numeric', month: 'short'}))}</div>${l.join('')}`).join('')
               : `<div class="empty-s">${esc(t('cal.nothing'))}</div>`;
           })() : `<div class="empty-s">${esc(t('cal.intro'))}</div>`}</div>
       </div>`;
@@ -906,7 +992,9 @@ function renderView() {
   const focus = document.activeElement && document.activeElement.id;
   const keep = {title: $('#qTitle') && $('#qTitle').value, subject: $('#qSubject') && $('#qSubject').value};
   const keepIn = ['qFront', 'qBack', 'drillIn'].map(id => [id, $('#' + id) && $('#' + id).value]);
-  v.innerHTML = VIEWS[settings.view] ? VIEWS[settings.view]() : '';
+  if (!VIEWS[settings.view]) settings.view = 'today';
+  buildRail();
+  v.innerHTML = VIEWS[settings.view]();
   keepIn.forEach(([id, val]) => { if (val && $('#' + id)) $('#' + id).value = val; });
   // Quick-add fields keep what was being typed when the view is redrawn.
   if (keep.title && $('#qTitle')) $('#qTitle').value = keep.title;
@@ -1008,6 +1096,18 @@ function renderDetails() {
       })() : ''}
       ${Files.attached('event', e.id)}
       <p><button class="btn-sm" data-copy-week>${esc(t('ui.copyWeek'))}</button> ${['exam', 'test', 'talk'].includes(e.type) ? `<button class="btn-sm" data-grade-for="${e.id}">${esc(t(grades().some(g => g.event === e.id) ? 'grade.showForEvent' : 'grade.forEvent'))}</button> ` : ''}<button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
+  } else if (sel.kind === 'appt') {
+    const a = appts().find(y => y.id === sel.id); if (!a) return;
+    box.innerHTML = `<div class="sect">${esc(t('appt.one'))}</div>
+      ${field('ui.title', `<input class="field-in" data-f="title" value="${esc(a.title || '')}" placeholder="${esc(t('appt.untitled'))}">`)}
+      ${field(a.repeat ? 'appt.date' : 'appt.dates', `<div class="two"><input type="date" data-f="date" value="${esc(a.date || '')}">${a.repeat ? '' : `<input type="date" data-f="dateTo" value="${esc(a.dateTo || '')}" min="${esc(a.date || '')}" title="${esc(t('appt.to'))}">`}</div>`)}
+      ${field('appt.time', `<div class="two"><input type="time" data-f="time" value="${esc(a.time || '')}"><input type="time" data-f="end" value="${esc(a.end || '')}"></div><div class="meta">${esc(t('appt.timeHint'))}</div>`)}
+      ${field('appt.place', `<input class="field-in" data-f="place" value="${esc(a.place || '')}">`)}
+      ${field('appt.repeat', `<select data-f="repeat">${REPEATS.map(r => `<option value="${r}"${(a.repeat || '') === r ? ' selected' : ''}>${esc(t('appt.rep.' + (r || 'none')))}</option>`).join('')}</select>`)}
+      ${a.repeat ? field('appt.until', `<input type="date" data-f="until" value="${esc(a.until || '')}" min="${esc(a.date || '')}">`) : ''}
+      ${field('ui.color', `<div class="colors">${COLORS.map(c => `<button data-color="${c}" class="${c === (a.color || APPT_COLOR) ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div>`)}
+      ${field('ui.notes', `<textarea data-f="notes">${esc(a.notes || '')}</textarea>`)}
+      <p><button class="btn-sm danger-btn" data-act="deleteSel">${esc(t('a.delete'))}</button></p>`;
   } else if (sel.kind === 'grade') {
     const g = grades().find(y => y.id === sel.id); if (!g) return;
     const cfg = gradeCfg(), v = gradeValue(g.value);
@@ -1051,12 +1151,12 @@ function renderWeekAhead() {
   const d = today();
   $('#weekAhead').innerHTML = Array.from({length: 7}, (_, i) => {
     const day = addDays(d, i), w = weekday(day);
-    const tasks = plan.tasks.filter(x => !x.done && x.due === day), events = plan.events.filter(e => e.date === day), cal = calEventsOn(day);
+    const tasks = plan.tasks.filter(x => !x.done && x.due === day), events = plan.events.filter(e => e.date === day), cal = calEventsOn(day), ap = apptsOn(day);
     const st = sessions().filter(x => x.date === day && !x.done).sort((a, b) => sessionStart(a).localeCompare(sessionStart(b)));
     const n = (w < plan.days ? plan.lessons.filter(l => l.day === w && !blockedAt(w, l.period) && lessonOn(l, day) && !choiceOn(l, day).off).length : 0) + classesOn(day).length;
     return `<div class="sect">${esc(i === 0 ? t('d.today') : i === 1 ? t('d.tomorrow') : fmtDate(day, {weekday: 'long', day: 'numeric', month: 'short'}))}
       <span style="float:right;text-transform:none;letter-spacing:0;font-weight:400">${n ? esc(t(n === 1 ? 'ui.nLesson' : 'ui.nLessons', {n})) : ''}</span></div>
-      ${events.map(e => eventRow(e, false)).join('')}${tasks.map(x => taskRow(x, true)).join('')}${st.map(studyRow).join('')}${cal.map(calRow).join('')}${!events.length && !tasks.length && !cal.length && !st.length ? `<div class="empty-s">—</div>` : ''}`;
+      ${events.map(e => eventRow(e, false)).join('')}${tasks.map(x => taskRow(x, true)).join('')}${st.map(studyRow).join('')}${ap.map(a => apptRow(a, day)).join('')}${cal.map(calRow).join('')}${!events.length && !tasks.length && !cal.length && !st.length && !ap.length ? `<div class="empty-s">—</div>` : ''}`;
   }).join('');
 }
 function updateStatus() {
@@ -1086,6 +1186,19 @@ view.addEventListener('click', e => {
   if (done) { const x = plan.tasks.find(y => y.id === done.dataset.done); change(() => { x.done = done.checked; }); return; }
   if (e.target.id === 'showDone') { settings.showDone = e.target.checked; saveSettings(); renderView(); return; }
   if (e.target.id === 'qAdd') return quickAdd();
+  if (inCal()) {
+    if (e.target.matches('[data-calschool]')) { settings.calSchool = e.target.checked; saveSettings(); renderView(); renderWeekAhead(); return; }
+    const cm = e.target.closest('[data-cmonth]');
+    if (cm) { const n = +cm.dataset.cmonth; if (n) calMonth = addMonths(calMonth || today(), n); else { calDay = today(); calMonth = firstOfMonth(calDay); } renderView(); return; }
+    const add = e.target.closest('[data-appt-add]');
+    if (add) { calDay = add.dataset.apptAdd; const a = newAppt(calDay); sel = {kind: 'appt', id: a.id}; showDetails(); setTimeout(() => { const f = document.querySelector('#details [data-f="title"]'); if (f) f.focus(); }, 0); return; }
+    const ap = e.target.closest('[data-appt]');
+    if (ap) { const c = ap.closest('[data-cday]'); if (c) calDay = c.dataset.cday; sel = {kind: 'appt', id: ap.dataset.appt}; showDetails(); return; }
+    const ce = e.target.closest('[data-cday] [data-event]');
+    if (ce) { calDay = ce.closest('[data-cday]').dataset.cday; sel = {kind: 'event', id: ce.dataset.event}; showDetails(); return; }
+    const cd = e.target.closest('[data-cday]');
+    if (cd) { calDay = cd.dataset.cday; if (calDay.slice(0, 7) !== calMonth.slice(0, 7)) calMonth = firstOfMonth(calDay); renderView(); return; }
+  }
   const go = e.target.closest('[data-goto]');
   if (go) { const [date, day, period] = go.dataset.goto.split('|'); weekStart = mondayOf(date); sel = {kind: 'cell', day: +day, period: +period}; settings.view = 'week'; showDetails(); renderAll(); return; }
 
@@ -1101,11 +1214,17 @@ view.addEventListener('click', e => {
   if (cell) { sel = {kind: 'cell', day: +cell.dataset.day, period: +cell.dataset.period}; showDetails(); return; }
   const gr = e.target.closest('[data-grade]');
   if (gr) { sel = {kind: 'grade', id: gr.dataset.grade}; showDetails(); return; }
-  const row = e.target.closest('[data-task],[data-event],[data-subject]');
+  const row = e.target.closest('[data-task],[data-event],[data-subject],[data-appt]');
   if (row && !e.target.closest('input')) {
-    sel = row.dataset.task ? {kind: 'task', id: row.dataset.task} : row.dataset.event ? {kind: 'event', id: row.dataset.event} : {kind: 'subject', id: row.dataset.subject};
+    sel = row.dataset.task ? {kind: 'task', id: row.dataset.task} : row.dataset.appt ? {kind: 'appt', id: row.dataset.appt} : row.dataset.event ? {kind: 'event', id: row.dataset.event} : {kind: 'subject', id: row.dataset.subject};
     showDetails();
   }
+});
+view.addEventListener('dblclick', e => {
+  const cd = inCal() && e.target.closest('[data-cday]');
+  if (!cd || e.target.closest('[data-appt],[data-event],.dd-add')) return;
+  calDay = cd.dataset.cday; const a = newAppt(calDay); sel = {kind: 'appt', id: a.id}; showDetails();
+  setTimeout(() => { const f = document.querySelector('#details [data-f="title"]'); if (f) f.focus(); }, 0);
 });
 $('#weekAhead').addEventListener('click', e => {
   const sd = e.target.closest('[data-sdone]');
@@ -1114,8 +1233,8 @@ $('#weekAhead').addEventListener('click', e => {
   if (tm) { startTimer(tm.dataset.timer); return; }
   const done = e.target.closest('[data-done]');
   if (done) { const x = plan.tasks.find(y => y.id === done.dataset.done); change(() => { x.done = done.checked; }); return; }
-  const row = e.target.closest('[data-task],[data-event]');
-  if (row) { sel = row.dataset.task ? {kind: 'task', id: row.dataset.task} : {kind: 'event', id: row.dataset.event}; settings.dockTab = 'details'; applySettings(); renderView(); }
+  const row = e.target.closest('[data-task],[data-event],[data-appt]');
+  if (row) { sel = row.dataset.task ? {kind: 'task', id: row.dataset.task} : row.dataset.appt ? {kind: 'appt', id: row.dataset.appt} : {kind: 'event', id: row.dataset.event}; settings.dockTab = 'details'; applySettings(); renderView(); }
 });
 view.addEventListener('change', e => {
   if (e.target.matches('[data-gterm]')) { settings.gradeTerm = e.target.value; saveSettings(); renderView(); return; }
@@ -1129,7 +1248,14 @@ view.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.closes
 function showDetails() { settings.dockTab = 'details'; if (!settings.dock) settings.dock = true; applySettings(); renderView(); }
 function quickAdd() {
   const title = (($('#qTitle') || {}).value || '').trim();
-  if (settings.view === 'tasks') {
+  if (inCal()) {
+    if (!title) return $('#qTitle').focus();
+    const date = validIso($('#qDate').value) ? $('#qDate').value : calDay || today();
+    calDay = date; calMonth = firstOfMonth(date);
+    newAppt(date, {title, time: $('#qTime').value || ''});
+    $('#qTitle').value = ''; $('#qTime').value = ''; $('#qTitle').focus();
+    toast(t('appt.added'));
+  } else if (settings.view === 'tasks') {
     if (!title) return $('#qTitle').focus();
     const x = {id: uid(), title, subject: $('#qSubject').value, due: $('#qDue').value || '', done: false, notes: ''};
     change(() => plan.tasks.push(x));
@@ -1261,7 +1387,7 @@ $('#details').addEventListener('change', e => {
   }
   if (!f || !sel) return;
   const obj = sel.kind === 'task' ? plan.tasks.find(x => x.id === sel.id) : sel.kind === 'event' ? plan.events.find(x => x.id === sel.id)
-    : sel.kind === 'grade' ? grades().find(x => x.id === sel.id) : sel.kind === 'deck' ? deckOf(sel.id) : subj(sel.id);
+    : sel.kind === 'grade' ? grades().find(x => x.id === sel.id) : sel.kind === 'appt' ? appts().find(x => x.id === sel.id) : sel.kind === 'deck' ? deckOf(sel.id) : subj(sel.id);
   if (!obj) return;
   const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
   change(() => { obj[f] = f === 'minutes' ? clamp(Math.round(+v) || 90, 5, 600) : f === 'weight' ? +v || 1 : f === 'prepMinutes' ? (+v > 0 ? Math.round(+v) : '') : typeof v === 'string' && f !== 'notes' ? v.trim() : v; });
@@ -1335,6 +1461,7 @@ $('#details').addEventListener('click', e => {
     return;
   }
   const c = e.target.closest('[data-color]');
+  if (c && sel && sel.kind === 'appt') { const a = appts().find(x => x.id === sel.id); if (a) change(() => { a.color = c.dataset.color; }); return; }
   if (c && sel && sel.kind === 'subject') { const s = subj(sel.id); change(() => { s.color = c.dataset.color; }); return; }
   if (e.target.closest('[data-next-lesson]')) { const x = plan.tasks.find(y => y.id === sel.id); change(() => { x.due = nextLesson(x.subject); }); }
 });
@@ -1350,6 +1477,7 @@ function setPick(l, date, id) {
 function deleteSel() {
   if (!sel) return;
   if (sel.kind === 'file') return Files.deleteSelected();
+  if (sel.kind === 'appt') { const id = sel.id; change(() => { plan.appts = appts().filter(x => x.id !== id); }); sel = null; renderAll(); return; }
   if (sel.kind === 'cell') { const l = lessonAt(sel.day, sel.period, addDays(shownMonday(), sel.day), false); if (l) change(() => { plan.lessons = plan.lessons.filter(x => x !== l); }); return; }
   if (sel.kind === 'deck') {
     const k = deckOf(sel.id); if (!k) return;
@@ -1425,10 +1553,10 @@ async function importPlan(file) {
   sel = null; renderAll(); toast(t('toast.imported'));
 }
 async function ask(message) { return invoke ? invoke('confirm', {title: t('confirm.title'), message, okLabel: t('confirm.ok'), cancelLabel: t('confirm.cancel')}) : confirm(message); }
-function print() { const v = settings.view; if (v !== 'week' && v !== 'tasks' && v !== 'events') setView('week'); setTimeout(() => invoke ? invoke('print_page').catch(e => toast(String(e))) : window.print(), 200); }
+function print() { const v = settings.view; if (v !== 'week' && v !== 'tasks' && v !== 'events' && !isCalView(v)) setView('week'); setTimeout(() => invoke ? invoke('print_page').catch(e => toast(String(e))) : window.print(), 200); }
 
 /* ================= Actions, menus, shortcuts ================= */
-function setView(v) { settings.view = v; if (sel && sel.kind === 'cell' && v !== 'week') sel = null; saveSettings(); renderAll(); }
+function setView(v) { settings.view = v; settings[isCalView(v) ? 'lastCal' : 'lastSchool'] = v; if (sel && sel.kind === 'cell' && v !== 'week') sel = null; saveSettings(); renderAll(); }
 /* ================= AI for school (ai.js) ================= */
 /* Plan Studio asks Claude itself now (before: through Agent Studio). Homework and dates can be entered in your own
    words ("Maths p. 34 by Thursday") — Claude reads them and sends back entries, which you take over with one click;
@@ -2066,6 +2194,14 @@ const A = {
   agentStudy: () => { toast(t('ai.working')); AI.studyPlan(); },
   aiSettings: () => openSettings('ai'),
   viewFiles: () => setView('files'),
+  modeSchool: () => setView(settings.lastSchool && VIEWS[settings.lastSchool] && !isCalView(settings.lastSchool) ? settings.lastSchool : 'today'),
+  modeCalendar: () => setView(isCalView(settings.lastCal) ? settings.lastCal : 'calMonth'),
+  viewCalMonth: () => setView('calMonth'), viewCalAgenda: () => setView('calAgenda'),
+  newAppt: () => {
+    if (!inCal()) setView(isCalView(settings.lastCal) ? settings.lastCal : 'calMonth');
+    const a = newAppt(calDay || today()); sel = {kind: 'appt', id: a.id}; showDetails();
+    setTimeout(() => { const f = document.querySelector('#details [data-f="title"]'); if (f) f.focus(); }, 0);
+  },
   newTask: () => { setView('tasks'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
   newEvent: () => { setView('events'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
   newSubject: () => { setView('subjects'); setTimeout(() => $('#qTitle') && $('#qTitle').focus(), 0); },
@@ -2105,9 +2241,10 @@ const A = {
 const MENUS = [
   ['file', [['importPlan', 'Ctrl+O'], ['exportBackup', 'Ctrl+S'], '-', ['exportIcs', 'Ctrl+E'], ['print', 'Ctrl+P']]],
   ['edit', [['undo', 'Ctrl+Z', null, false, ['Ctrl+Shift+Z']], ['redo', 'Ctrl+Y'], '-', ['deleteSel', 'Delete', null, true]]],
-  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newDeck', 'Ctrl+L'], ['newFolder'], ['searchCards', 'Ctrl+F'], ['newSubject'], '-', ['agentStudy'], ['aiSettings'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
-  ['view', [['viewToday', 'Alt+1', () => settings.view === 'today'], ['viewWeek', 'Alt+2', () => settings.view === 'week'], ['viewTasks', 'Alt+3', () => settings.view === 'tasks'],
+  ['plan', [['newTask', 'Ctrl+N'], ['newEvent', 'Ctrl+Shift+N'], ['newGrade', 'Ctrl+G'], ['newDeck', 'Ctrl+L'], ['newFolder'], ['searchCards', 'Ctrl+F'], ['newSubject'], ['newAppt', 'Ctrl+T'], '-', ['agentStudy'], ['aiSettings'], '-', ['gradeSettings'], ['timetableSettings'], ['calendarSettings'], ['refreshCalendars', 'F5']]],
+  ['view', [['modeSchool', 'Ctrl+1', () => !inCal()], ['modeCalendar', 'Ctrl+2', () => inCal()], '-', ['viewToday', 'Alt+1', () => settings.view === 'today'], ['viewWeek', 'Alt+2', () => settings.view === 'week'], ['viewTasks', 'Alt+3', () => settings.view === 'tasks'],
     ['viewEvents', 'Alt+4', () => settings.view === 'events'], ['viewSubjects', 'Alt+5', () => settings.view === 'subjects'], ['viewGrades', 'Alt+6', () => settings.view === 'grades'], ['viewLearn', 'Alt+7', () => settings.view === 'learn'], ['viewFiles', 'Alt+8', () => settings.view === 'files'], '-',
+    ['viewCalMonth', 'Alt+9', () => settings.view === 'calMonth'], ['viewCalAgenda', 'Alt+0', () => settings.view === 'calAgenda'], '-',
     ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
   ['settings', [['settings', 'Ctrl+,'], '-', '#menu.language',
     ['langAuto', null, () => settings.lang === 'auto'], ['langEn', null, () => settings.lang === 'en'], ['langDe', null, () => settings.lang === 'de'],
@@ -2164,6 +2301,9 @@ const ICONS = {
   events: SV('<path d="M12 2 3 6v6c0 5 4 9 9 10 5-1 9-5 9-10V6z"/><path d="m9 12 2 2 4-4"/>'),
   subjects: SV('<path d="M4 19V5a2 2 0 0 1 2-2h13v15H6a2 2 0 0 0-2 2zm0 0a2 2 0 0 0 2 2h13"/>'),
   grades: SV('<path d="M4 20h16M7 16V10M12 16V5M17 16v-8"/>'),
+  calMonth: SV('<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M7.5 13h.01M12 13h.01M16.5 13h.01M7.5 17h.01M12 17h.01"/>'),
+  calAgenda: SV('<path d="M8 6h13M8 12h13M8 18h13"/><rect x="2.5" y="4.5" width="3" height="3" rx=".5"/><rect x="2.5" y="10.5" width="3" height="3" rx=".5"/><rect x="2.5" y="16.5" width="3" height="3" rx=".5"/>'),
+  school: SV('<path d="m2 9 10-5 10 5-10 5z"/><path d="M6 11v5c3 2.5 9 2.5 12 0v-5M22 9v6"/>'),
   files: SV('<path d="M3 6.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
   learn: SV('<rect x="2.5" y="7" width="14" height="13" rx="2"/><path d="M7.5 7V5.5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3"/><path d="M6 13.5h7"/>'),
   open: SV('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
@@ -2181,12 +2321,28 @@ function makeBtn(act, html, cls = '') {
   b.className = 'ibtn' + (cls ? ' ' + cls : ''); b.innerHTML = html; b.title = tip(act); b.dataset.act = act;
   return b;
 }
+/* The tool rail and the tabs Schule | Kalender: each tab has its own views. */
+let railMode = null;
+function buildRail(force = false) {
+  const mode = inCal() ? 'calendar' : 'school';
+  if (!force && mode === railMode) return;
+  railMode = mode;
+  const tools = $('#tools'); tools.innerHTML = '';
+  (mode === 'calendar' ? [['viewCalMonth', 'calMonth'], ['viewCalAgenda', 'calAgenda']]
+    : [['viewToday', 'today'], ['viewWeek', 'week'], ['viewTasks', 'tasks'], ['viewEvents', 'events'], ['viewGrades', 'grades'], ['viewLearn', 'learn'], ['viewFiles', 'files'], ['viewSubjects', 'subjects']])
+    .forEach(([a, i]) => tools.append(makeBtn(a, ICONS[i], 'view')));
+  if (mode === 'calendar') tools.append(makeBtn('calendarSettings', ICONS.gear));
+  $('#modeTabs').innerHTML = [['school', 'modeSchool'], ['calendar', 'modeCalendar']].map(([m, act]) =>
+    `<div class="tab${m === mode ? ' active' : ''}" data-act="${act}" title="${esc(tip(act))}">${ICONS[m === 'school' ? 'school' : 'calMonth']}<span class="name">${esc(t('mode.' + m))}</span></div>`).join('');
+  const cta = $('.menubar .cta');
+  cta.dataset.act = mode === 'calendar' ? 'newAppt' : 'newTask'; cta.dataset.i18n = mode === 'calendar' ? 'ui.ctaAppt' : 'ui.ctaTask'; cta.textContent = t(cta.dataset.i18n);
+  syncDisabled();
+}
 function buildToolbars() {
   const fill = (id, list) => { const box = $(id); box.innerHTML = ''; list.forEach(([a, i]) => box.append(makeBtn(a, i))); };
   fill('#fileBtns', [['importPlan', ICONS.open], ['exportBackup', ICONS.save], ['undo', ICONS.undo], ['redo', ICONS.redo]]);
   fill('#viewBtns', [['exportIcs', ICONS.ics], ['print', ICONS.print], ['togglePanels', ICONS.panel], ['settings', ICONS.gear], ['shortcuts', ICONS.help]]);
-  const tools = $('#tools'); tools.innerHTML = '';
-  [['viewToday', 'today'], ['viewWeek', 'week'], ['viewTasks', 'tasks'], ['viewEvents', 'events'], ['viewGrades', 'grades'], ['viewLearn', 'learn'], ['viewFiles', 'files'], ['viewSubjects', 'subjects']].forEach(([a, i]) => tools.append(makeBtn(a, ICONS[i], 'view')));
+  buildRail(true);
   $('#ctxBar').innerHTML = '';
   $$('[data-act="togglePanels"]').forEach(b => b.classList.toggle('active', settings.dock));
   syncDisabled();
@@ -2548,6 +2704,7 @@ window.addEventListener('keydown', e => {
   if (act) { e.preventDefault(); e.stopPropagation(); run(act); return; }
   if (typing()) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); deleteSel(); }
+  else if (settings.view === 'calMonth' && /^Arrow/.test(e.key)) { e.preventDefault(); moveCalDay({ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7}[e.key]); }
   else if (settings.view === 'week' && /^Arrow/.test(e.key)) { e.preventDefault(); moveCell(e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0, e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0); }
 }, true);
 

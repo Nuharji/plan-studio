@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.16.0 — 2026-11-14
+- New: a second tab **Calendar** next to **School** (above the view; View menu or Ctrl+1 / Ctrl+2) — just a calendar,
+  without the school stuff. A month view (click a day to see everything on it, double-click or "+" to add an
+  appointment, arrow keys move the day) and an agenda of the next 90 days. Own appointments with date (also over
+  several days), time from – to, place, color, notes and repeat (every week, month or year — e.g. birthdays — until a
+  date). Linked calendars show up there too, the school's exams and dates when "Show school dates" is on. Appointments
+  also appear in Today ("My calendars") and in the next 7 days panel. Each tab remembers its last view.
+
 ## 1.15.0 — 2026-11-14
 - New: the app logo follows the theme — the logo in the menu bar, the big tile on the start page and, while the app runs, the icon in the Dock (macOS) and the taskbar / window icon (Windows, Linux). CLI themes: black with the accent color and an edge in it; High contrast: black and white with a yellow edge; Graphite: gray with the logo in the app's color; GitHub and Sand: a light card; GitHub Dark, Midnight and Dusk: tinted with the theme; Light and Rosé: the light tile. Dark keeps the usual icon.
 
