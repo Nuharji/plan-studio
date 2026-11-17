@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.17.0 — 2026-11-17
+- New: theme **Proton** — dark violet-grey with a violet accent, and the app logo in the violet fade of the Proton apps (menu bar, start page, Dock / taskbar).
+- New: layout **Proton** — one calm frame: menu, tool bar, rail and side panels share the frame color without lines, the panels sit on the left, the work area is a rounded sheet inside the frame; roomy, no status bar. Works with every theme.
+
 ## 1.16.0 — 2026-11-14
 - New: a second tab **Calendar** next to **School** (above the view; View menu or Ctrl+1 / Ctrl+2) — just a calendar,
   without the school stuff. A month view (click a day to see everything on it, double-click or "+" to add an
