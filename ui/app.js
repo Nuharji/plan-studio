@@ -2063,10 +2063,61 @@ function deckDetails(box, field) {
 function importCards(deckId) {
   const k = deckOf(deckId); if (!k) return;
   modal(t('learn.importTitle', {name: k.name}), `<p class="meta" style="margin-top:0">${esc(t('learn.importHint'))}</p>
-    <textarea id="importText" class="import-text" spellcheck="false" placeholder="${esc(t('learn.importPh'))}"></textarea>
+    <textarea id="importText" class="import-text" spellcheck="false" placeholder="${esc(t('learn.importPh'))}" data-deck="${k.id}"></textarea>
+    ${invoke ? `<div class="import-image"><button class="btn-sm" data-import-image="${k.id}"${imageBusy ? ' disabled' : ''}>${esc(t('learn.image'))}</button><span class="meta" id="importImageState">${esc(t(imageBusy ? 'learn.imageBusy' : 'learn.imageHint'))}</span></div>` : ''}
     <div class="import-foot"><span class="meta" id="importCount">${esc(t('learn.importN', {n: 0}))}</span><button class="btn-sm primary" data-import-go="${k.id}">${esc(t('learn.importGo'))}</button></div>`);
   setTimeout(() => $('#importText') && $('#importText').focus(), 0);
 }
+/* Vocabulary from images (Claude reads them): picked with "From image …", pasted (Cmd/Ctrl+V) or dropped onto the
+   dialog. What Claude reads goes into the list as "front <Tab> back" to check and correct; if the dialog was closed
+   meanwhile, the cards go straight into the deck. */
+let imageBusy = false;
+const importOpen = deckId => $('#modal').classList.contains('show') && $('#importText') && $('#importText').dataset.deck === deckId;
+function imageState(on) {
+  imageBusy = on;
+  const b = $('[data-import-image]'), s = $('#importImageState');
+  if (b) b.disabled = on;
+  if (s) s.textContent = t(on ? 'learn.imageBusy' : 'learn.imageHint');
+}
+async function importImages(deckId, paths) {
+  const k = deckOf(deckId); if (!k || !paths.length || imageBusy) return;
+  imageState(true);
+  let cards = null;
+  try { cards = await AI.imageCards(k, paths); } finally { imageState(false); }
+  if (!cards) return;
+  if (importOpen(deckId)) {
+    const ta = $('#importText'), lines = cards.map(c => `${c.front.replace(/[\t\n]+/g, ' ')}\t${c.back.replace(/[\t\n]+/g, ' ')}`).join('\n');
+    ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '\n') : '') + lines + '\n';
+    $('#importCount').textContent = t('learn.importN', {n: parseCards(ta.value).length});
+    toast(t('learn.imageRead', {n: cards.length}));
+  } else {
+    const n = addCards(deckId, cards);
+    toast(t('learn.imported', {n, skip: cards.length - n}));
+  }
+}
+async function importImageFiles(deckId, files) {
+  const imgs = [...files].filter(f => /^image\//.test(f.type) || /\.(png|jpe?g|gif|webp)$/i.test(f.name || ''));
+  if (!imgs.length) return false;
+  const paths = [];
+  for (const f of imgs) {
+    const ext = (/\.(png|jpe?g|gif|webp)$/i.exec(f.name || '') || [])[1] || ({'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp'}[f.type] || 'png');
+    try { paths.push(await invoke('ai_save_image', {name: 'image.' + ext.toLowerCase(), data: [...new Uint8Array(await f.arrayBuffer())]})); }
+    catch (e) { toast(String(e)); }
+  }
+  if (paths.length) importImages(deckId, paths);
+  return true;
+}
+$('#modalBody').addEventListener('paste', e => {
+  const ta = $('#importText'); if (!invoke || !ta || !e.clipboardData) return;
+  const files = [...e.clipboardData.files];
+  if (files.some(f => /^image\//.test(f.type))) { e.preventDefault(); importImageFiles(ta.dataset.deck, files); }
+});
+$('#modalBody').addEventListener('dragover', e => { if ($('#importText') && invoke && [...(e.dataTransfer.items || [])].some(i => i.kind === 'file')) e.preventDefault(); });
+$('#modalBody').addEventListener('drop', e => {
+  const ta = $('#importText'); if (!invoke || !ta || !e.dataTransfer.files.length) return;
+  e.preventDefault();
+  importImageFiles(ta.dataset.deck, e.dataTransfer.files).then(ok => ok || toast(t('learn.imageNone')));
+});
 function addCards(deckId, list) {
   const k = deckOf(deckId); if (!k || !list.length) return 0;
   const have = new Set(k.cards.map(c => normAnswer(c.front) + '\n' + normAnswer(c.back)));
@@ -2075,7 +2126,9 @@ function addCards(deckId, list) {
   return fresh.length;
 }
 $('#modalBody').addEventListener('input', e => { if (e.target.id === 'importText') $('#importCount').textContent = t('learn.importN', {n: parseCards(e.target.value).length}); });
-$('#modalBody').addEventListener('click', e => {
+$('#modalBody').addEventListener('click', async e => {
+  const im = e.target.closest('[data-import-image]');
+  if (im) { const paths = await invoke('ai_pick_images').catch(err => { toast(String(err)); return []; }); importImages(im.dataset.importImage, paths); return; }
   const b = e.target.closest('[data-import-go]'); if (!b) return;
   const list = parseCards($('#importText').value);
   if (!list.length) { toast(t('learn.importNone')); return; }

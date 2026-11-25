@@ -26,7 +26,7 @@ and controls as the other Studio apps.
 - **Study planner:** topics to tick off per exam, test or presentation, a study plan spread over the days before it
   (minutes per day, other exams included, after school), "Study today" with a study timer and minutes learned per subject
 - **Learn:** flashcards and vocabulary in decks (per subject, and for an exam if you like): type them in, paste a list
-  (from Excel, Quizlet, a vocabulary list) or let Claude make them. Practise by turning over, typing
+  (from Excel, Quizlet, a vocabulary list), read them from a photo or screenshot (Claude) or let Claude make them. Practise by turning over, typing
   the answer (small typos and umlaut spellings count) or picking one of four, in either direction; the Leitner system
   brings back what you didn't know soon and what you know rarely. Due cards show in Today, the minutes practised count
   as learned for the subject. Decks go into folders and subfolders (drag a deck onto a folder; learn a whole folder at

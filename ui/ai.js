@@ -94,6 +94,20 @@ const AI = (() => {
     openDeck(k.id);
   }
 
+  /* ---- Vocabulary (or cards) read from images: photos of the textbook, screenshots of a list ----
+     Resolves with the cards found ([{front, back}]) or null; the caller shows them for checking before they are added. */
+  async function imageCards(k, paths) {
+    const files = paths.map(p => '- ' + p).join('\n');
+    const task = t(k.kind === 'vocab' ? 'learn.imageVocab' : 'learn.imageTask', {files, a: k.a || t('learn.langA'), b: k.b || t('learn.langB')})
+      + '\n' + t('ai.formatJson', {f: '{"cards": [{"front": "…", "back": "…"}]}'});
+    const title = t('learn.imageTitle', {name: k.name});
+    const res = await ask({kind: 'image', title, files: paths, prompt: task});
+    if (!res.ok) { fail(res, title); return null; }
+    const x = agentCardList({data: jsonOf(res.text)});
+    if (!x) { toast(t('learn.imageNone')); return null; }
+    return x.cards;
+  }
+
   /* ---- Tools for a file of the school folder (Files) ---- */
   const FILE_TOOLS = ['sheet', 'quiz', 'cards', 'summary', 'explain'];
   async function fileTool(kind, f, extra = '') {
@@ -209,5 +223,5 @@ const AI = (() => {
     window.__TAURI__.event.listen('ai-login-done', e => { loginBusy = false; toast(t(e.payload ? 'ai.loginOk' : 'ai.loginFail')); check(); });
     check();
   }
-  return {init, check, ask, card, entries, studyPlan, deckCards, fileTool, FILE_TOOLS, settingsHtml, jsonOf, running, get info() { return info; }, get results() { return results; }, _done: done};
+  return {init, check, ask, card, entries, studyPlan, deckCards, imageCards, fileTool, FILE_TOOLS, settingsHtml, jsonOf, running, get info() { return info; }, get results() { return results; }, _done: done};
 })();

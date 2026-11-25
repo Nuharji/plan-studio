@@ -274,6 +274,8 @@ fn main() {
             files::files_reveal,
             files::files_pick_folder,
             files::files_pick,
+            ai::ai_pick_images,
+            ai::ai_save_image,
             plan_load,
             plan_save,
             plan_stamp,

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.18.0 — 2026-11-25
+- New: **vocabulary from images** — in a deck's "Paste a list …" dialog, "Read from image …" picks one or more photos or
+  screenshots (PNG, JPG, GIF, WebP) of a vocabulary list; you can also paste an image (Ctrl/⌘V) or drop it onto the
+  dialog. Claude reads the words (front and back in the deck's languages, swapped if the columns are the other way
+  round, several translations split by "; ") and puts them into the list to check and correct before "Add". For a
+  flashcard deck it reads terms and explanations. If the dialog was closed meanwhile, the cards go straight into the deck.
+
 ## 1.17.0 — 2026-11-17
 - New: theme **Proton** — dark violet-grey with a violet accent, and the app logo in the violet fade of the Proton apps (menu bar, start page, Dock / taskbar).
 - New: layout **Proton** — one calm frame: menu, tool bar, rail and side panels share the frame color without lines, the panels sit on the left, the work area is a rounded sheet inside the frame; roomy, no status bar. Works with every theme.

@@ -194,6 +194,40 @@ pub fn ai_ask(app: AppHandle, id: String, prompt: String, dir: String, files: Ve
     Ok(())
 }
 
+/// The image types Claude can read (its Read tool shows them to it).
+pub const IMAGE_EXT: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
+
+/// The file extension of an image name, if Claude can read that type ("Foto.JPG" → "jpg").
+pub fn image_ext(name: &str) -> Option<String> {
+    let ext = Path::new(name).extension()?.to_string_lossy().to_lowercase();
+    IMAGE_EXT.contains(&ext.as_str()).then_some(ext)
+}
+
+/// Picks images (photos, screenshots of a vocabulary list) for Claude to read.
+#[tauri::command]
+pub async fn ai_pick_images(app: AppHandle) -> Vec<String> {
+    crate::shared::file_dialog(&app).add_filter("Images", &IMAGE_EXT).blocking_pick_files().unwrap_or_default().into_iter()
+        .filter_map(|f| f.into_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect()
+}
+
+/// Saves a pasted or dropped image in the app's own folder (so Claude can read it) and returns its path. Images
+/// saved there more than a week ago are cleared out.
+#[tauri::command]
+pub fn ai_save_image(app: AppHandle, name: String, data: Vec<u8>) -> Result<String, String> {
+    let ext = image_ext(&name).ok_or("not an image (PNG, JPG, GIF, WebP)")?;
+    if data.is_empty() || data.len() > 30 * 1024 * 1024 { return Err("image too big".into()); }
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("ai").join("images");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let week = std::time::Duration::from_secs(7 * 24 * 3600);
+    for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+        if e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.elapsed().ok()).is_some_and(|age| age > week) { let _ = std::fs::remove_file(e.path()); }
+    }
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let p = dir.join(format!("image-{stamp}.{ext}"));
+    std::fs::write(&p, data).map_err(|e| e.to_string())?;
+    Ok(p.to_string_lossy().into_owned())
+}
+
 /// Stops a request.
 #[tauri::command]
 pub fn ai_stop(id: String) -> bool {
@@ -218,6 +252,15 @@ mod tests {
         assert!(a.windows(2).any(|w| w == ["--model", "sonnet"]));
         assert!(a[a.iter().position(|x| x == "--append-system-prompt").unwrap() + 1].contains("nur Dateien lesen"));
         assert!(!args(false, &[], "").contains(&"--model".to_string()));
+    }
+
+    #[test]
+    fn knows_images() {
+        assert_eq!(image_ext("Vokabeln.JPG").as_deref(), Some("jpg"));
+        assert_eq!(image_ext("/a/b/screen shot.png").as_deref(), Some("png"));
+        assert_eq!(image_ext("liste.pdf"), None);
+        assert_eq!(image_ext("png"), None);
+        assert_eq!(image_ext("x.heic"), None);
     }
 
     #[test]
